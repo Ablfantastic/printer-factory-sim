@@ -1,0 +1,16 @@
+# FastAPI Backend
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+sqlalchemy>=2.0.0
+
+# Streamlit Frontend
+streamlit>=1.30.0
+matplotlib>=3.8.0
+
+# Simulation (optional but recommended)
+simpy>=4.1.0
+
+# Utilities
+python-dateutil>=2.8.0
