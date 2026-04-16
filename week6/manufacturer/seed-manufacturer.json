@@ -1,0 +1,26 @@
+{
+  "products": [
+    {"name": "pcb", "type": "raw"},
+    {"name": "extrusor", "type": "raw"},
+    {"name": "kit_piezas", "type": "raw"},
+    {"name": "CTRL-V2", "type": "raw"},
+    {"name": "CTRL-V3", "type": "raw"},
+    {"name": "sensor_autonivel", "type": "raw"},
+    {"name": "cables_conexion", "type": "raw"},
+    {"name": "transformador_24v", "type": "raw"},
+    {"name": "enchufe_schuko", "type": "raw"},
+    {"name": "P3D-Classic", "type": "finished"},
+    {"name": "P3D-Pro", "type": "finished"}
+  ],
+  "inventory": [
+    {"product": "pcb", "quantity": 5},
+    {"product": "extrusor", "quantity": 12},
+    {"product": "kit_piezas", "quantity": 10},
+    {"product": "CTRL-V2", "quantity": 8},
+    {"product": "CTRL-V3", "quantity": 8},
+    {"product": "sensor_autonivel", "quantity": 4},
+    {"product": "cables_conexion", "quantity": 60},
+    {"product": "transformador_24v", "quantity": 10},
+    {"product": "enchufe_schuko", "quantity": 10}
+  ]
+}
