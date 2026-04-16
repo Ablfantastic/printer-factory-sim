@@ -1,0 +1,95 @@
+{
+  "products": [
+    {
+      "name": "pcb",
+      "description": "Main control board",
+      "lead_time_days": 3,
+      "pricing": [
+        {"min_qty": 1, "price": 40.0},
+        {"min_qty": 20, "price": 32.0},
+        {"min_qty": 200, "price": 25.0}
+      ],
+      "initial_stock": 500
+    },
+    {
+      "name": "extrusor",
+      "description": "Hot-end extruder",
+      "lead_time_days": 5,
+      "pricing": [
+        {"min_qty": 1, "price": 60.0},
+        {"min_qty": 10, "price": 50.0}
+      ],
+      "initial_stock": 200
+    },
+    {
+      "name": "kit_piezas",
+      "description": "Mechanical parts kit",
+      "lead_time_days": 4,
+      "pricing": [
+        {"min_qty": 1, "price": 150.0},
+        {"min_qty": 10, "price": 135.0}
+      ],
+      "initial_stock": 120
+    },
+    {
+      "name": "CTRL-V2",
+      "description": "Controller board V2",
+      "lead_time_days": 3,
+      "pricing": [
+        {"min_qty": 1, "price": 45.0},
+        {"min_qty": 20, "price": 39.0}
+      ],
+      "initial_stock": 180
+    },
+    {
+      "name": "CTRL-V3",
+      "description": "Controller board V3",
+      "lead_time_days": 4,
+      "pricing": [
+        {"min_qty": 1, "price": 55.0},
+        {"min_qty": 20, "price": 48.0}
+      ],
+      "initial_stock": 150
+    },
+    {
+      "name": "sensor_autonivel",
+      "description": "Auto-level sensor",
+      "lead_time_days": 6,
+      "pricing": [
+        {"min_qty": 1, "price": 35.0},
+        {"min_qty": 20, "price": 29.0}
+      ],
+      "initial_stock": 90
+    },
+    {
+      "name": "cables_conexion",
+      "description": "Connection cables",
+      "lead_time_days": 2,
+      "pricing": [
+        {"min_qty": 1, "price": 8.0},
+        {"min_qty": 100, "price": 5.5}
+      ],
+      "initial_stock": 1200
+    },
+    {
+      "name": "transformador_24v",
+      "description": "24V power transformer",
+      "lead_time_days": 3,
+      "pricing": [
+        {"min_qty": 1, "price": 22.0},
+        {"min_qty": 50, "price": 18.0}
+      ],
+      "initial_stock": 250
+    },
+    {
+      "name": "enchufe_schuko",
+      "description": "Schuko plug",
+      "lead_time_days": 2,
+      "pricing": [
+        {"min_qty": 1, "price": 5.0},
+        {"min_qty": 100, "price": 3.5}
+      ],
+      "initial_stock": 600
+    }
+  ]
+}
