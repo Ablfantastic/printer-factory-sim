@@ -2,7 +2,7 @@
 from sqlalchemy.orm import Session
 from datetime import date
 
-from app.database import engine, SessionLocal, Base
+from app.database import engine, SessionLocal, Base, run_sqlite_migrations
 from app.models import Product, ProductType, Supplier, Inventory, BOM
 
 
@@ -163,6 +163,18 @@ def seed_data():
         raise
     finally:
         db.close()
+
+
+def reset_simulation_data() -> None:
+    """
+    Wipe the database, recreate schema, and reload seed data.
+    Clears simulated calendar, orders, POs, events, and inventory to initial values.
+    """
+    engine.dispose()
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    run_sqlite_migrations()
+    seed_data()
 
 
 if __name__ == "__main__":

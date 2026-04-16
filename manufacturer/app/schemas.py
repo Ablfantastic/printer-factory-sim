@@ -82,6 +82,33 @@ class PurchaseOrderResponse(PurchaseOrderBase):
         from_attributes = True
 
 
+class SupplierMaterialLeadTime(BaseModel):
+    supplier_id: int
+    supplier_name: str
+    product_id: int
+    material_name: str
+    lead_time_days: int
+    arrival_date_if_ordered_today: date
+    days_to_arrival_if_ordered_today: int
+
+
+class OpenPurchaseOrderEta(BaseModel):
+    id: int
+    supplier_name: str
+    material_name: str
+    quantity: int
+    issue_date: date
+    expected_delivery: date
+    status: str
+    days_until_delivery: int
+
+
+class PurchasingEtaResponse(BaseModel):
+    simulated_date: date
+    catalog: List[SupplierMaterialLeadTime]
+    open_purchase_orders: List[OpenPurchaseOrderEta]
+
+
 # Manufacturing Order schemas
 class ManufacturingOrderBase(BaseModel):
     product_id: int
@@ -92,10 +119,17 @@ class ManufacturingOrderCreate(ManufacturingOrderBase):
     pass
 
 
+class BOMRequirement(BaseModel):
+    material_id: int
+    material_name: str
+    quantity: int
+
+
 class ManufacturingOrderResponse(ManufacturingOrderBase):
     id: int
     created_date: date
     status: str
+    bom: List[BOMRequirement] = []
 
     class Config:
         from_attributes = True

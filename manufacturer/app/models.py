@@ -94,6 +94,7 @@ class ManufacturingOrder(Base):
     created_date = Column(Date, nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     quantity = Column(Integer, nullable=False)
+    units_produced = Column(Integer, default=0)  # cumulative; remaining = quantity - units_produced
     status = Column(String, default="pending")
 
     product = relationship("Product", back_populates="manufacturing_orders")

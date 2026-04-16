@@ -1,4 +1,5 @@
 """Core simulation engine for day-by-day production cycle."""
+import json
 from datetime import date, timedelta
 from typing import List, Dict, Any, Optional
 import random
@@ -9,8 +10,11 @@ from sqlalchemy import and_
 from app.models import (
     Product, ProductType, Inventory, BOM,
     PurchaseOrder, PurchaseOrderStatus,
-    ManufacturingOrder, OrderStatus, Event
+    ManufacturingOrder, OrderStatus, Event,
+    Supplier,
 )
+
+SIMULATION_STATE_EVENT = "simulation_started"
 
 
 class SimulationEngine:
@@ -22,19 +26,46 @@ class SimulationEngine:
         self._load_or_init_state()
 
     def _load_or_init_state(self):
-        """Load current state from database or initialize if empty."""
+        """Load current simulated calendar day from DB (persists across HTTP requests)."""
         day_state = self.db.query(Event).filter(
-            Event.type == "simulation_started"
+            Event.type == SIMULATION_STATE_EVENT
         ).first()
-        
-        if day_state:
-            # Parse starting day from event detail
-            try:
-                import json
-                detail = json.loads(day_state.detail) if day_state.detail else {}
-                self.current_day = detail.get("start_day", 1)
-            except:
-                pass
+
+        if not day_state:
+            day_state = Event(
+                type=SIMULATION_STATE_EVENT,
+                sim_date=date(2026, 1, 1),
+                detail=json.dumps({"current_day": 1}),
+            )
+            self.db.add(day_state)
+            self.db.commit()
+            self.current_day = 1
+            return
+
+        try:
+            detail = json.loads(day_state.detail) if day_state.detail else {}
+            self.current_day = int(
+                detail.get("current_day", detail.get("start_day", 1))
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            self.current_day = 1
+
+    def _persist_current_day(self) -> None:
+        """Persist calendar so the next API request sees the same simulated day."""
+        day_state = self.db.query(Event).filter(
+            Event.type == SIMULATION_STATE_EVENT
+        ).first()
+        if not day_state:
+            self._load_or_init_state()
+            return
+        detail = {}
+        try:
+            detail = json.loads(day_state.detail) if day_state.detail else {}
+        except json.JSONDecodeError:
+            pass
+        detail["current_day"] = self.current_day
+        day_state.detail = json.dumps(detail)
+        self.db.commit()
 
     def advance_day(self) -> Dict[str, Any]:
         """
@@ -64,11 +95,12 @@ class SimulationEngine:
 
         # Step 4: All events are logged during each step
 
-        # Step 5: Advance calendar
+        # Step 5: Advance calendar (persisted so PO issue dates and deliveries stay consistent)
         self.current_day += 1
+        self._persist_current_day()
 
         return {
-            "current_day": self.current_day - 1,
+            "current_day": self.current_day,
             "simulated_date": simulated_date.isoformat(),
             "events_generated": len(events_generated),
             "summary": {
@@ -78,24 +110,37 @@ class SimulationEngine:
             }
         }
 
+    def _finished_product_ids(self) -> List[int]:
+        rows = self.db.query(Product.id).filter(
+            Product.type == ProductType.FINISHED.value
+        ).all()
+        return [r[0] for r in rows]
+
     def _generate_demand(self, sim_date: date) -> List[Dict[str, Any]]:
         """Generate random manufacturing orders based on configured mean/variance."""
         events = []
-        
+
+        finished_ids = self._finished_product_ids()
+        if not finished_ids:
+            return events
+
         # Configurable parameters (default values)
         mean_demand = 5
         variance = 4
-        
-        # Generate random demand using normal distribution
+        capacity_per_day = 10
+
+        # Generate random demand using normal distribution (cap so orders can clear in reasonable time)
         demand_quantity = max(0, int(random.gauss(mean_demand, variance**0.5)))
-        
+        demand_quantity = min(demand_quantity, capacity_per_day * 3)
+
         if demand_quantity > 0:
-            # Create manufacturing order for default printer model
+            product_id = random.choice(finished_ids)
             mo = ManufacturingOrder(
                 created_date=sim_date,
-                product_id=1,  # Default to first finished product
+                product_id=product_id,
                 quantity=demand_quantity,
-                status=OrderStatus.PENDING.value
+                units_produced=0,
+                status=OrderStatus.PENDING.value,
             )
             self.db.add(mo)
             self.db.commit()
@@ -123,9 +168,8 @@ class SimulationEngine:
         ).all()
 
         for po in due_pos:
-            # Update PO status
-            po.status = PurchaseOrderStatus.SHIPPED.value
-            
+            po.status = PurchaseOrderStatus.DELIVERED.value
+
             # Add materials to inventory
             inv = self.db.query(Inventory).filter(
                 Inventory.product_id == po.product_id
@@ -150,47 +194,50 @@ class SimulationEngine:
         return events
 
     def _process_production(self, sim_date: date) -> List[Dict[str, Any]]:
-        """Process manufacturing orders within daily capacity limits."""
+        """Run production for released (in-progress) orders within daily capacity."""
         events = []
-        
-        # Get capacity from config (default)
+
         capacity_per_day = 10
-        
-        # Get pending orders
-        pending_orders = self.db.query(ManufacturingOrder).filter(
-            ManufacturingOrder.status == OrderStatus.PENDING.value
-        ).all()
+
+        in_progress = self.db.query(ManufacturingOrder).filter(
+            ManufacturingOrder.status == OrderStatus.IN_PROGRESS.value
+        ).order_by(ManufacturingOrder.id).all()
 
         produced_today = 0
-        
-        for mo in pending_orders:
+
+        for mo in in_progress:
             if produced_today >= capacity_per_day:
                 break
-            
-            # Check if we have enough materials (simplified check)
-            if self._check_bom_availability(mo.product_id, min(mo.quantity, capacity_per_day - produced_today)):
-                # Consume materials and complete production
-                consume_qty = min(mo.quantity, capacity_per_day - produced_today)
-                self._consume_bom(mo.product_id, consume_qty)
-                
-                produced_today += consume_qty
-                
-                if consume_qty >= mo.quantity:
-                    mo.status = OrderStatus.COMPLETED.value
-                    event_type = "production_completed"
-                else:
-                    mo.status = OrderStatus.IN_PROGRESS.value
-                    event_type = "production_started"
-                
+
+            prior = mo.units_produced or 0
+            remaining = mo.quantity - prior
+            if remaining <= 0:
+                mo.status = OrderStatus.COMPLETED.value
                 self.db.commit()
-                
-                event = {
-                    "type": event_type,
-                    "sim_date": sim_date.isoformat(),
-                    "detail": f"Manufacturing order #{mo.id}: {consume_qty} units processed"
-                }
-                self._log_event(event)
-                events.append(event)
+                continue
+
+            batch = min(remaining, capacity_per_day - produced_today)
+            # Raw materials were consumed in full when the order was released
+            self._add_product_inventory(mo.product_id, batch)
+            mo.units_produced = prior + batch
+            produced_today += batch
+
+            if mo.units_produced >= mo.quantity:
+                mo.status = OrderStatus.COMPLETED.value
+                event_type = "production_completed"
+            else:
+                event_type = "production_in_progress"
+
+            self.db.commit()
+
+            event = {
+                "type": event_type,
+                "sim_date": sim_date.isoformat(),
+                "detail": f"Manufacturing order #{mo.id}: {batch} units produced "
+                f"({mo.units_produced}/{mo.quantity})",
+            }
+            self._log_event(event)
+            events.append(event)
 
         return events
 
@@ -213,17 +260,25 @@ class SimulationEngine:
         
         return True
 
+    def _add_product_inventory(self, product_id: int, quantity: int) -> None:
+        """Increase on-hand stock for a product (e.g. finished goods from production)."""
+        inv = self.db.query(Inventory).filter(Inventory.product_id == product_id).first()
+        if inv:
+            inv.quantity += quantity
+        else:
+            self.db.add(Inventory(product_id=product_id, quantity=quantity))
+
     def _consume_bom(self, product_id: int, quantity: int):
         """Consume BOM materials for production."""
         bom_items = self.db.query(BOM).filter(
             BOM.finished_product_id == product_id
         ).all()
-        
+
         for item in bom_items:
             inv = self.db.query(Inventory).filter(
                 Inventory.product_id == item.material_id
             ).first()
-            
+
             if inv:
                 inv.quantity -= item.quantity * quantity
 
@@ -249,14 +304,25 @@ class SimulationEngine:
         if mo.status != OrderStatus.PENDING.value:
             return {"success": False, "error": "Order not in pending status"}
         
-        # Check BOM availability
         if not self._check_bom_availability(mo.product_id, mo.quantity):
             return {"success": False, "error": "Insufficient materials"}
-        
-        # Mark as in progress
+
+        # Issue full BOM to the order now so inventory reflects committed production
+        self._consume_bom(mo.product_id, mo.quantity)
+
+        mo.units_produced = 0
         mo.status = OrderStatus.IN_PROGRESS.value
         self.db.commit()
-        
+
+        issue_date = date(2026, 1, 1) + timedelta(days=self.current_day - 1)
+        self._log_event(
+            {
+                "type": "order_released",
+                "sim_date": issue_date.isoformat(),
+                "detail": f"Manufacturing order #{order_id}: materials issued for {mo.quantity} units",
+            }
+        )
+
         return {"success": True, "order_id": order_id, "status": "in_progress"}
 
     def create_purchase_order(
@@ -286,11 +352,27 @@ class SimulationEngine:
         )
         self.db.add(po)
         self.db.commit()
-        
+
+        self._log_event(
+            {
+                "type": "purchase_issued",
+                "sim_date": issue_date.isoformat(),
+                "detail": json.dumps(
+                    {
+                        "purchase_order_id": po.id,
+                        "supplier_id": supplier_id,
+                        "product_id": product_id,
+                        "quantity": quantity,
+                        "expected_delivery": expected_delivery.isoformat(),
+                    }
+                ),
+            }
+        )
+
         return {
             "success": True,
             "purchase_order_id": po.id,
-            "expected_delivery": expected_delivery.isoformat()
+            "expected_delivery": expected_delivery.isoformat(),
         }
 
     def get_inventory(self) -> List[Dict[str, Any]]:
@@ -323,19 +405,26 @@ class SimulationEngine:
             bom_items = self.db.query(BOM).filter(
                 BOM.finished_product_id == mo.product_id
             ).all()
-            
-            orders.append({
-                "id": mo.id,
-                "product_id": mo.product_id,
-                "quantity": mo.quantity,
-                "created_date": mo.created_date.isoformat(),
-                "bom": [
+            bom_rows = []
+            for b in bom_items:
+                mat = self.db.query(Product).filter(Product.id == b.material_id).first()
+                bom_rows.append(
                     {
                         "material_id": b.material_id,
-                        "quantity": b.quantity * mo.quantity
+                        "material_name": mat.name if mat else "?",
+                        "quantity": b.quantity * mo.quantity,
                     }
-                    for b in bom_items
-                ]
-            })
+                )
+
+            orders.append(
+                {
+                    "id": mo.id,
+                    "product_id": mo.product_id,
+                    "quantity": mo.quantity,
+                    "created_date": mo.created_date,
+                    "status": mo.status,
+                    "bom": bom_rows,
+                }
+            )
         
         return orders

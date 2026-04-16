@@ -8,6 +8,7 @@ sqlalchemy>=2.0.0
 # Streamlit Frontend
 streamlit>=1.30.0
 matplotlib>=3.8.0
+pandas>=2.0.0
 
 # Simulation (optional but recommended)
 simpy>=4.1.0
