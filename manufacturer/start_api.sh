@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "🏭 Starting 3D Printer Production Simulator API..."
+echo "🏭 Starting manufacturer API on port 8002..."
 echo ""
 
 # Check if virtual environment exists at repo root, if not create it
@@ -23,11 +23,11 @@ pip install -q -r requirements.txt
 
 # Initialize database
 echo "Initializing database..."
-python -c "from app.seed import init_db, seed_data; init_db(); seed_data()" 2>/dev/null || true
+python -m app.seed
 
 # Start FastAPI server
 echo ""
-echo "Starting server on http://localhost:8000"
-echo "API docs available at http://localhost:8000/docs"
+echo "Starting server on http://localhost:8002"
+echo "API docs available at http://localhost:8002/docs"
 echo ""
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload

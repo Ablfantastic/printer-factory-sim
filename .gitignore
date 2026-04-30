@@ -1,4 +1,6 @@
 .env
 database.db
+manufacturer/manufacturer.db
+manufacturer/simulator.db
 __pycache__/
 .venv/

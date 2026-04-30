@@ -1,262 +1,294 @@
-"""Streamlit dashboard for 3D Printer Production Simulator."""
+"""Streamlit dashboard: manufacturer ↔ provider."""
 import os
-import streamlit as st
-import requests
-from datetime import datetime
-import matplotlib.pyplot as plt
-import pandas as pd
+from urllib.parse import quote
 
-# API base (override when UI and API run on different hosts)
+import pandas as pd
+import requests
+import streamlit as st
+
 _api_root = os.environ.get("PRINTER_SIM_API_URL", "http://localhost:8000").rstrip("/")
 API_BASE_URL = f"{_api_root}/api"
 
 st.set_page_config(
-    page_title="3D Printer Factory Simulator",
+    page_title="Manufacturer",
     page_icon="🏭",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 
-def api_get(endpoint: str, params: dict = None) -> dict:
-    """Make a GET request to the API."""
+def api_get(path: str):
     try:
-        response = requests.get(f"{API_BASE_URL}{endpoint}", params=params, timeout=5)
+        response = requests.get(f"{API_BASE_URL}{path}", timeout=10)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"API Error: {e}")
-        return None
+    except requests.RequestException as exc:
+        st.error(f"No se pudo contactar la API ({API_BASE_URL}): {exc}")
+        st.stop()
 
 
-def api_post(endpoint: str, data: dict = None) -> dict:
-    """Make a POST request to the API."""
+def api_post(path: str, payload: dict | None = None):
     try:
-        response = requests.post(f"{API_BASE_URL}{endpoint}", json=data, timeout=5)
+        response = requests.post(f"{API_BASE_URL}{path}", json=payload, timeout=15)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        st.error(f"API Error: {e}")
-        return None
+    except requests.RequestException as exc:
+        st.error(f"Error al enviar la petición: {exc}")
+        resp = getattr(exc, "response", None)
+        if resp is not None:
+            try:
+                st.json(resp.json())
+            except Exception:
+                st.code(resp.text or "")
+        st.stop()
+
+
+def _providers_df(data: list) -> pd.DataFrame:
+    if not data:
+        return pd.DataFrame(columns=["name", "url", "status", "provider_day"])
+    rows = []
+    for p in data:
+        rows.append(
+            {
+                "name": p.get("name", ""),
+                "url": p.get("url", ""),
+                "status": p.get("status", ""),
+                "provider_day": p.get("current_day"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _stock_df(data: list) -> pd.DataFrame:
+    if not data:
+        return pd.DataFrame(columns=["product_name", "quantity", "product_id"])
+    return pd.DataFrame(
+        [
+            {
+                "product_name": x.get("product_name", ""),
+                "quantity": x.get("quantity", 0),
+                "product_id": x.get("product_id"),
+            }
+            for x in data
+        ]
+    )
+
+
+def _purchases_df(data: list) -> pd.DataFrame:
+    if not data:
+        return pd.DataFrame(
+            columns=[
+                "id",
+                "supplier",
+                "product",
+                "qty",
+                "unit_price",
+                "total",
+                "placed_day",
+                "eta_day",
+                "status",
+            ]
+        )
+    rows = []
+    for o in data:
+        rows.append(
+            {
+                "id": o.get("id"),
+                "supplier": o.get("supplier_name", ""),
+                "product": o.get("product_name", ""),
+                "qty": o.get("quantity"),
+                "unit_price": o.get("unit_price"),
+                "total": o.get("total_price"),
+                "placed_day": o.get("placed_day"),
+                "eta_day": o.get("expected_delivery_day"),
+                "status": o.get("status", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _catalog_df(catalog: list) -> pd.DataFrame:
+    if not catalog:
+        return pd.DataFrame(columns=["name", "lead_days", "in_stock", "from_price"])
+    rows = []
+    for item in catalog:
+        tiers = item.get("pricing_tiers") or []
+        min_price = min((t.get("unit_price", t.get("price", 0)) for t in tiers), default=None)
+        rows.append(
+            {
+                "name": item.get("name", ""),
+                "lead_days": item.get("lead_time_days"),
+                "in_stock": item.get("stock_quantity"),
+                "from_price": min_price,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def main():
-    st.title("🏭 3D Printer Production Simulator")
-    
-    # Sidebar with controls
-    with st.sidebar:
-        st.header("Controls")
-        
-        if st.button("⏩ Advance Day", type="primary"):
-            with st.spinner("Running simulation..."):
-                result = api_post("/day/advance")
-                if result:
-                    st.success(
-                        f"Simulated **{result.get('simulated_date', '')}**. "
-                        f"Calendar now at day **{result.get('current_day', '?')}**."
-                    )
-                    st.info(f"Events generated: {result['events_generated']}")
-                    st.rerun()
-
-        st.divider()
-        st.markdown("**Restart simulation**")
-        st.caption(
-            "Resets the calendar to day 1, restores default inventory, and removes "
-            "all manufacturing orders, purchase orders, and event history."
-        )
-        if st.button("🔄 Restart simulation", type="secondary"):
-            with st.spinner("Resetting database..."):
-                result = api_post("/simulation/reset")
-                if result and result.get("success"):
-                    st.success(result.get("message", "Reset complete."))
-                    st.rerun()
-                elif result is not None:
-                    st.error("Reset failed.")
-        
-        st.divider()
-        st.caption("Production planner — raw stock arrives on the PO expected delivery date when you advance the day.")
-    
-    # Header: Current simulated day
-    calendar = api_get("/calendar")
-    if calendar:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            st.metric("Current Day", f"Day {calendar['current_day']}")
-        with col2:
-            st.metric("Simulated Date", calendar['simulated_date'])
-    
-    st.divider()
-    
-    # Main dashboard layout
-    col_inventory, col_orders = st.columns(2)
-    
-    # Inventory Panel
-    with col_inventory:
-        st.subheader("📦 Inventory Levels")
-        inventory = api_get("/inventory")
-        if inventory is not None:
-            if not inventory:
-                st.info("No inventory data yet. Run simulation or add stock.")
-            else:
-                for item in inventory:
-                    qty = item['quantity']
-                    color = "🟢" if qty >= 20 else "🟡" if qty >= 5 else "🔴"
-                    st.write(f"{color} **{item['product_name']}**: {qty}")
-        else:
-            st.warning("Unable to fetch inventory.")
-    
-    # Pending Orders Panel
-    with col_orders:
-        st.subheader("📋 Pending Orders")
-        orders = api_get("/orders/pending")
-        if orders is not None:
-            if not orders:
-                st.info("No pending orders. Advance the day to generate demand.")
-            else:
-                for order in orders:
-                    with st.expander(f"Order #{order['id']} - {order['quantity']} units"):
-                        st.write(f"**Created:** {order['created_date']}")
-                        st.write("**BOM requirements:**")
-                        bom = order.get("bom", [])
-                        for b in bom:
-                            label = b.get("material_name") or f"id {b['material_id']}"
-                            st.write(f"  - {label}: {b['quantity']}")
-
-                        if st.button(f"Release #{order['id']}", key=f"rel_{order['id']}"):
-                            result = api_post(f"/orders/{order['id']}/release")
-                            if result and result.get("success"):
-                                st.success("Order released!")
-                                st.rerun()
-                            elif result:
-                                st.error(result.get("error", "Failed"))
-        else:
-            st.warning("Unable to fetch orders (is the API running?).")
-    
-    st.divider()
-
-    # Supplier lead times & open PO ETAs
-    st.subheader("🚚 Supplier lead times & arrivals")
-    eta = api_get("/purchasing/eta")
-    if eta is not None:
-        st.caption(
-            f"Simulated **today**: {eta.get('simulated_date', '')} — "
-            "“If ordered today” assumes a PO issued now; inventory still updates on that arrival date when you advance days."
-        )
-        cat = eta.get("catalog") or []
-        if cat:
-            df_cat = pd.DataFrame(
-                [
-                    {
-                        "Supplier": r["supplier_name"],
-                        "Supplier #": r["supplier_id"],
-                        "Material": r["material_name"],
-                        "Lead (days)": r["lead_time_days"],
-                        "Arrives on (if ordered today)": r["arrival_date_if_ordered_today"],
-                        "Days to arrival": r["days_to_arrival_if_ordered_today"],
-                    }
-                    for r in cat
-                ]
-            )
-            st.dataframe(df_cat, use_container_width=True, hide_index=True)
-        opens = eta.get("open_purchase_orders") or []
-        if opens:
-            st.markdown("**Open purchase orders (not yet delivered)**")
-            df_open = pd.DataFrame(
-                [
-                    {
-                        "PO #": r["id"],
-                        "Supplier": r["supplier_name"],
-                        "Material": r["material_name"],
-                        "Qty": r["quantity"],
-                        "Issued": r["issue_date"],
-                        "Expected delivery": r["expected_delivery"],
-                        "Days until delivery": r["days_until_delivery"],
-                        "Status": r["status"],
-                    }
-                    for r in opens
-                ]
-            )
-            st.dataframe(df_open, use_container_width=True, hide_index=True)
-        elif not cat:
-            st.info("No supplier rows.")
-    else:
-        st.warning("Could not load purchasing ETA.")
-
-    st.divider()
-
-    # Purchasing Panel
-    st.subheader("🛒 Purchase Orders")
-    p_col1, p_col2, p_col3 = st.columns(3)
-    
-    with p_col1:
-        suppliers = api_get("/suppliers")
-        supplier_options = (
-            {f"{s['name']} (#{s['id']})": s["id"] for s in suppliers}
-            if suppliers
-            else {}
-        )
-        selected_supplier = st.selectbox("Supplier", list(supplier_options.keys()) if supplier_options else [])
-    
-    with p_col2:
-        products = api_get("/products")
-        product_options = {p['name']: p['id'] for p in products if p['type'] == 'raw'} if products else {}
-        selected_product = st.selectbox("Product", list(product_options.keys()) if product_options else [])
-    
-    with p_col3:
-        quantity = st.number_input("Quantity", min_value=1, value=10)
-    
-    st.caption(
-        "Materials are added to inventory on the **expected delivery** date "
-        "(issue date + supplier lead time). Advance days until that date."
+    st.markdown(
+        """
+        <style>
+        .block-container { padding-top: 1.2rem; }
+        div[data-testid="stMetricValue"] { font-size: 2rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    if st.button("Issue Purchase Order"):
-        if selected_supplier and selected_product:
-            result = api_post("/purchases", {
-                "supplier_id": supplier_options[selected_supplier],
-                "product_id": product_options[selected_product],
-                "quantity": quantity
-            })
-            if result:
-                st.success(
-                    f"PO #{result.get('id', '')} created. "
-                    f"Expected delivery: **{result.get('expected_delivery', 'N/A')}** "
-                    f"(inventory updates on that simulated date)."
-                )
-                st.rerun()
-        else:
-            st.warning("Please select both supplier and product.")
-    
+
+    day = api_get("/day/current")
+    current = int(day["current_day"])
+
+    h1, h2, h3 = st.columns([1.2, 1, 1])
+    with h1:
+        st.markdown("### Fabricante")
+        st.caption("Inventario y compras al proveedor vía REST")
+    with h2:
+        st.metric("Día simulado", f"{current}")
+    with h3:
+        if st.button("Avanzar un día", type="primary", use_container_width=True):
+            with st.spinner("Sincronizando con el proveedor…"):
+                api_post("/day/advance")
+            st.toast(f"Día avanzado → {current + 1}")
+            st.rerun()
+
     st.divider()
-    
-    # Charts Section
-    st.subheader("📊 History & Analytics")
-    events = api_get("/events")
 
-    if events is not None:
-        if not events:
-            st.info("No events logged yet. Advance the day or issue a purchase order.")
+    providers = api_get("/providers")
+    stock = api_get("/stock")
+    purchases = api_get("/purchases")
+
+    c1, c2 = st.columns(2, gap="large")
+
+    with c1:
+        st.markdown("##### Proveedores")
+        pdf = _providers_df(providers)
+        if pdf.empty:
+            st.info("No hay proveedores configurados en `config.json`.")
         else:
-            event_types = {}
-            for event in events:
-                etype = event["type"]
-                event_types[etype] = event_types.get(etype, 0) + 1
+            st.dataframe(
+                pdf,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "name": st.column_config.TextColumn("Proveedor", width="medium"),
+                    "url": st.column_config.LinkColumn("URL", display_text="Abrir"),
+                    "status": st.column_config.TextColumn("Estado"),
+                    "provider_day": st.column_config.NumberColumn(
+                        "Día (proveedor)", format="%d", width="small"
+                    ),
+                },
+            )
 
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    with c2:
+        st.markdown("##### Stock local")
+        sdf = _stock_df(stock)
+        if sdf.empty:
+            st.info("Sin líneas de inventario.")
+        else:
+            st.dataframe(
+                sdf,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "product_name": st.column_config.TextColumn("Producto", width="large"),
+                    "quantity": st.column_config.ProgressColumn(
+                        "Cantidad",
+                        format="%d",
+                        min_value=0,
+                        max_value=max(int(sdf["quantity"].max()), 1),
+                    ),
+                    "product_id": st.column_config.NumberColumn("ID", format="%d", width="small"),
+                },
+            )
 
-            ax1.pie(event_types.values(), labels=event_types.keys(), autopct="%1.1f%%")
-            ax1.set_title("Events by Type")
-
-            dates = {}
-            for event in events:
-                d = event["sim_date"]
-                dates[d] = dates.get(d, 0) + 1
-
-            ax2.plot(list(dates.keys()), list(dates.values()), marker="o")
-            ax2.set_title("Events Per Day")
-            ax2.tick_params(axis="x", rotation=45)
-
-            st.pyplot(fig)
+    st.markdown("##### Pedidos de compra (al proveedor)")
+    odf = _purchases_df(purchases)
+    if odf.empty:
+        st.info("Aún no hay pedidos. Usa el formulario de abajo para crear uno.")
     else:
-        st.warning("Unable to load events (is the API running?).")
+        st.dataframe(
+            odf,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "id": st.column_config.NumberColumn("ID", format="%d", width="small"),
+                "supplier": st.column_config.TextColumn("Proveedor", width="small"),
+                "product": st.column_config.TextColumn("Producto", width="medium"),
+                "qty": st.column_config.NumberColumn("Cant.", format="%d", width="small"),
+                "unit_price": st.column_config.NumberColumn("Precio u.", format="%.2f €"),
+                "total": st.column_config.NumberColumn("Total", format="%.2f €"),
+                "placed_day": st.column_config.NumberColumn("Día pedido", format="%d", width="small"),
+                "eta_day": st.column_config.NumberColumn("ETA día", format="%d", width="small"),
+                "status": st.column_config.TextColumn("Estado", width="small"),
+            },
+        )
+
+    st.divider()
+    st.markdown("##### Nuevo pedido al proveedor")
+
+    if not providers:
+        st.warning("Configura al menos un proveedor en `manufacturer/config.json`.")
+        return
+
+    ok_providers = [p for p in providers if p.get("status") == "ok"]
+    if not ok_providers:
+        st.warning(
+            "Ningún proveedor responde como **ok**. Arranca el provider en el puerto 8001 y recarga."
+        )
+
+    with st.container(border=True):
+        names = [p["name"] for p in providers]
+        selected_supplier = st.selectbox("Proveedor", names, key="supplier_pick")
+
+        try:
+            catalog = api_get(f"/providers/{quote(selected_supplier, safe='')}/catalog")
+        except Exception:
+            st.error("No se pudo cargar el catálogo.")
+            return
+
+        cdf = _catalog_df(catalog)
+        st.caption("Catálogo remoto (solo lectura)")
+        if cdf.empty:
+            st.info("Catálogo vacío.")
+        else:
+            st.dataframe(
+                cdf,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "name": st.column_config.TextColumn("SKU / nombre", width="medium"),
+                    "lead_days": st.column_config.NumberColumn("Lead (días)", format="%d", width="small"),
+                    "in_stock": st.column_config.NumberColumn("Stock proveedor", format="%d"),
+                    "from_price": st.column_config.NumberColumn("Desde (€)", format="%.2f"),
+                },
+            )
+
+        product_names = [item["name"] for item in catalog] if catalog else []
+        if not product_names:
+            st.warning("No hay productos en el catálogo para este proveedor.")
+            return
+
+        f1, f2, f3 = st.columns([2, 1, 1])
+        with f1:
+            selected_product = st.selectbox("Producto a pedir", product_names, key="product_pick")
+        with f2:
+            qty = st.number_input("Cantidad", min_value=1, value=10, step=1, key="qty_pick")
+        with f3:
+            st.write("")
+            st.write("")
+            if st.button("Enviar pedido", type="primary", use_container_width=True):
+                with st.spinner("Creando pedido en el proveedor…"):
+                    api_post(
+                        "/purchases",
+                        {
+                            "supplier_name": selected_supplier,
+                            "product_name": selected_product,
+                            "quantity": int(qty),
+                        },
+                    )
+                st.toast(f"Pedido: {selected_product} × {qty}")
+                st.rerun()
 
 
 if __name__ == "__main__":

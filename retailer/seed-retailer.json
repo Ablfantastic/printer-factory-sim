@@ -1,0 +1,12 @@
+{
+  "catalog": [
+    {"model": "P3D-Classic", "retail_price": 479.99},
+    {"model": "P3D-Pro",     "retail_price": 729.99},
+    {"model": "P3D-Mini",    "retail_price": 279.99}
+  ],
+  "stock": [
+    {"model": "P3D-Classic", "quantity": 5},
+    {"model": "P3D-Pro",     "quantity": 3},
+    {"model": "P3D-Mini",    "quantity": 8}
+  ]
+}

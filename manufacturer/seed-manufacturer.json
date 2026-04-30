@@ -1,0 +1,64 @@
+{
+  "products": [
+    {"name": "pcb",               "type": "raw"},
+    {"name": "extrusor",          "type": "raw"},
+    {"name": "kit_piezas",        "type": "raw"},
+    {"name": "CTRL-V2",           "type": "raw"},
+    {"name": "CTRL-V3",           "type": "raw"},
+    {"name": "sensor_autonivel",  "type": "raw"},
+    {"name": "cables_conexion",   "type": "raw"},
+    {"name": "transformador_24v", "type": "raw"},
+    {"name": "enchufe_schuko",    "type": "raw"}
+  ],
+  "inventory": [
+    {"product": "pcb",               "quantity": 20},
+    {"product": "extrusor",          "quantity": 20},
+    {"product": "kit_piezas",        "quantity": 20},
+    {"product": "CTRL-V2",           "quantity": 20},
+    {"product": "CTRL-V3",           "quantity": 15},
+    {"product": "sensor_autonivel",  "quantity": 10},
+    {"product": "cables_conexion",   "quantity": 100},
+    {"product": "transformador_24v", "quantity": 20},
+    {"product": "enchufe_schuko",    "quantity": 20}
+  ],
+  "printer_models": [
+    {
+      "name": "P3D-Classic",
+      "wholesale_price": 370.0,
+      "production_days": 2,
+      "daily_capacity": 5,
+      "bom": {
+        "pcb": 1, "extrusor": 1, "kit_piezas": 1,
+        "CTRL-V2": 1, "cables_conexion": 2,
+        "transformador_24v": 1, "enchufe_schuko": 1
+      }
+    },
+    {
+      "name": "P3D-Pro",
+      "wholesale_price": 560.0,
+      "production_days": 3,
+      "daily_capacity": 3,
+      "bom": {
+        "pcb": 1, "extrusor": 2, "kit_piezas": 1,
+        "CTRL-V3": 1, "sensor_autonivel": 1,
+        "cables_conexion": 3, "transformador_24v": 1, "enchufe_schuko": 1
+      }
+    },
+    {
+      "name": "P3D-Mini",
+      "wholesale_price": 215.0,
+      "production_days": 1,
+      "daily_capacity": 8,
+      "bom": {
+        "pcb": 1, "kit_piezas": 1,
+        "CTRL-V2": 1, "cables_conexion": 1,
+        "transformador_24v": 1, "enchufe_schuko": 1
+      }
+    }
+  ],
+  "finished_stock": [
+    {"model": "P3D-Classic", "quantity": 5},
+    {"model": "P3D-Pro",     "quantity": 3},
+    {"model": "P3D-Mini",    "quantity": 8}
+  ]
+}
