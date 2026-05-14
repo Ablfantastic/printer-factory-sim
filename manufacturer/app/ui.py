@@ -6,7 +6,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-_api_root = os.environ.get("PRINTER_SIM_API_URL", "http://localhost:8000").rstrip("/")
+_api_root = os.environ.get("PRINTER_SIM_API_URL", "http://localhost:8002").rstrip("/")
 API_BASE_URL = f"{_api_root}/api"
 
 st.set_page_config(
@@ -74,6 +74,39 @@ def _stock_df(data: list) -> pd.DataFrame:
     )
 
 
+def _sales_orders_df(data: list) -> pd.DataFrame:
+    if not data:
+        return pd.DataFrame(
+            columns=[
+                "id",
+                "retailer",
+                "model",
+                "qty",
+                "unit_price",
+                "total",
+                "placed_day",
+                "eta_day",
+                "status",
+            ]
+        )
+    rows = []
+    for o in data:
+        rows.append(
+            {
+                "id": o.get("id"),
+                "retailer": o.get("retailer", ""),
+                "model": o.get("model", ""),
+                "qty": o.get("quantity"),
+                "unit_price": o.get("unit_price"),
+                "total": o.get("total_price"),
+                "placed_day": o.get("placed_day"),
+                "eta_day": o.get("expected_delivery_day"),
+                "status": o.get("status", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _purchases_df(data: list) -> pd.DataFrame:
     if not data:
         return pd.DataFrame(
@@ -129,7 +162,13 @@ def main():
     st.markdown(
         """
         <style>
-        .block-container { padding-top: 1.2rem; }
+        .block-container {
+            padding-top: 3.5rem;
+            padding-bottom: 2rem;
+        }
+        header[data-testid="stHeader"] {
+            background: rgba(255, 255, 255, 0.96);
+        }
         div[data-testid="stMetricValue"] { font-size: 2rem; }
         </style>
         """,
@@ -156,7 +195,8 @@ def main():
 
     providers = api_get("/providers")
     stock = api_get("/stock")
-    purchases = api_get("/purchases")
+    sales_orders = api_get("/sales-orders")
+    purchases = api_get("/purchase-orders")
 
     c1, c2 = st.columns(2, gap="large")
 
@@ -201,6 +241,54 @@ def main():
                     "product_id": st.column_config.NumberColumn("ID", format="%d", width="small"),
                 },
             )
+
+    st.markdown("##### Órdenes de retailers")
+    sdf = _sales_orders_df(sales_orders)
+    if sdf.empty:
+        st.info("No hay órdenes de retailers.")
+        with st.expander("Debug"):
+            st.write("Raw data:", sales_orders)
+    else:
+        header = st.columns([0.55, 1.2, 1.25, 0.65, 0.8, 0.9, 0.75, 0.65, 0.9, 0.85])
+        labels = [
+            "ID",
+            "Retailer",
+            "Modelo",
+            "Cant.",
+            "Precio u.",
+            "Total",
+            "Día pedido",
+            "ETA",
+            "Estado",
+            "Acción",
+        ]
+        for col, label in zip(header, labels):
+            col.markdown(f"**{label}**")
+
+        for order in sales_orders:
+            order_id = order.get("id")
+            status = order.get("status", "")
+            row = st.columns([0.55, 1.2, 1.25, 0.65, 0.8, 0.9, 0.75, 0.65, 0.9, 0.85])
+            row[0].write(order_id)
+            row[1].write(order.get("retailer", ""))
+            row[2].write(order.get("model", ""))
+            row[3].write(order.get("quantity", 0))
+            row[4].write(f"{order.get('unit_price') or 0:.2f} €")
+            row[5].write(f"{order.get('total_price') or 0:.2f} €")
+            row[6].write(order.get("placed_day"))
+            row[7].write(order.get("expected_delivery_day"))
+            row[8].write(status)
+            if row[9].button(
+                "Liberar",
+                key=f"release_order_{order_id}",
+                help="Mover la orden a producción",
+                disabled=status != "pending",
+                use_container_width=True,
+            ):
+                with st.spinner(f"Liberando orden #{order_id}..."):
+                    api_post(f"/production/release/{order_id}")
+                st.toast(f"Orden #{order_id} liberada")
+                st.rerun()
 
     st.markdown("##### Pedidos de compra (al proveedor)")
     odf = _purchases_df(purchases)
@@ -280,7 +368,7 @@ def main():
             if st.button("Enviar pedido", type="primary", use_container_width=True):
                 with st.spinner("Creando pedido en el proveedor…"):
                     api_post(
-                        "/purchases",
+                        "/purchase-orders",
                         {
                             "supplier_name": selected_supplier,
                             "product_name": selected_product,

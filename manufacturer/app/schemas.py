@@ -31,6 +31,41 @@ class PurchaseOrderCreateRequest(BaseModel):
     quantity: int
 
 
+class PrinterModelResponse(BaseModel):
+    id: int
+    name: str
+    wholesale_price: float
+    production_days: int
+    daily_capacity: int
+    bom: dict
+
+
+class SalesOrderCreateRequest(BaseModel):
+    retailer: str
+    model: str
+    quantity: int
+
+
+class PriceSetRequest(BaseModel):
+    price: float
+
+
+class SalesOrderResponse(BaseModel):
+    id: int
+    retailer: str
+    model: str
+    quantity: int
+    unit_price: float | None = None
+    total_price: float | None = None
+    placed_day: int
+    released_day: int | None = None
+    production_start_day: int | None = None
+    expected_delivery_day: int | None = None
+    shipped_day: int | None = None
+    delivered_day: int | None = None
+    status: str
+
+
 class PurchaseOrderResponse(BaseModel):
     id: int
     supplier_name: str

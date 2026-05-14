@@ -1,4 +1,4 @@
-#!/home/abel/repositories/printer-factory-sim/venv/bin/python3
+#!/home/samuel/DGSI/printer-factory-sim/venv/bin/python3.12
 # -*- coding: utf-8 -*-
 import re
 import sys

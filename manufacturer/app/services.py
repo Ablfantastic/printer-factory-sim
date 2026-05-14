@@ -176,6 +176,12 @@ class ManufacturerService:
     # ------------------------------------------------------------------
 
     def create_sales_order(self, retailer: str, model: str, quantity: int) -> dict[str, Any]:
+        retailer = retailer.strip()
+        model = model.strip()
+        if not retailer:
+            raise ValueError("Retailer name is required")
+        if not model:
+            raise ValueError("Model is required")
         if quantity <= 0:
             raise ValueError("Quantity must be positive")
         pm = self.db.query(models.PrinterModel).filter_by(name=model).first()
@@ -234,6 +240,23 @@ class ManufacturerService:
             raise ValueError(f"Sales order {order_id} not found")
         if order.status != "pending":
             raise ValueError(f"Order {order_id} is '{order.status}', must be 'pending' to release")
+
+        if self._finished_qty(order.model) >= order.quantity:
+            day = self.current_day()
+            self._adjust_finished_stock(order.model, -order.quantity)
+            order.status = "shipped"
+            order.released_day = day
+            order.shipped_day = day
+            order.expected_delivery_day = day + 1
+            self.db.commit()
+            self.log_event(
+                "order_shipped_from_stock",
+                entity_type="sales_order",
+                entity_id=order.id,
+                detail={"model": order.model, "qty": order.quantity, "retailer": order.retailer},
+            )
+            return self._serialize_sales_order(order)
+
         order.status = "released"
         order.released_day = self.current_day()
         self.db.commit()

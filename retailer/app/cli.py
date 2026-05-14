@@ -58,12 +58,15 @@ def _markup_pct() -> float:
 @app.command("catalog")
 def show_catalog(
     config: str = typer.Option("config.json", "--config", "-c"),
+    sync: bool = typer.Option(False, "--sync", help="Refresh wholesale prices from manufacturer first"),
 ):
     """Show catalog models and retail prices."""
     _load_config(config)
     from app import services
     db = _get_db()
     try:
+        if sync:
+            services.sync_catalog_from_manufacturer(db, _mfr_url())
         items = services.get_catalog(db)
         _pretty([
             {"model": i.model, "retail_price": i.retail_price, "wholesale_price": i.wholesale_price}
@@ -223,6 +226,9 @@ def purchase_create(
             f"Purchase order {po.id} created. Status: {po.status}, "
             f"Manufacturer order ID: {po.manufacturer_order_id}"
         )
+    except (ValueError, RuntimeError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
     finally:
         db.close()
 

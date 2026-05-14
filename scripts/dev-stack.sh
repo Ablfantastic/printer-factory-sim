@@ -2,7 +2,7 @@
 # Si ./scripts/dev-stack.sh falla con "Permission denied": chmod +x scripts/dev-stack.sh
 #   o ejecuta: bash scripts/dev-stack.sh
 # Crea/actualiza el venv, instala dependencias, hace seed, arranca provider (:8001),
-# manufacturer (:8000) y la UI Streamlit (:8501). La UI queda en primer plano; al
+# manufacturer (:8002), retailer (:8003) y la UI Streamlit (:8501). La UI queda en primer plano; al
 # cerrarla (Ctrl+C) se detienen también las APIs.
 set -euo pipefail
 
@@ -14,7 +14,7 @@ PIDS=()
 
 cleanup() {
   echo ""
-  echo "Deteniendo APIs (provider + manufacturer)…"
+  echo "Deteniendo APIs (provider + manufacturer + retailer)…"
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
@@ -31,11 +31,12 @@ require_port_free() {
   fi
 }
 
-require_port_free 8000
 require_port_free 8001
+require_port_free 8002
+require_port_free 8003
 require_port_free 8501
 
-if [ ! -d "$REPO_ROOT/venv" ]; then
+if [ ! -x "$REPO_ROOT/venv/bin/python" ]; then
   echo "Creando entorno virtual en venv/…"
   python3 -m venv "$REPO_ROOT/venv"
 fi
@@ -43,8 +44,16 @@ fi
 # shellcheck source=/dev/null
 source "$REPO_ROOT/venv/bin/activate"
 
-echo "Instalando dependencias (provider + manufacturer)…"
-pip install -q -r "$REPO_ROOT/provider/requirements.txt" -r "$REPO_ROOT/manufacturer/requirements.txt"
+if ! python -m pip --version >/dev/null 2>&1; then
+  echo "El entorno virtual existe pero está incompleto. Regenerando venv/…"
+  deactivate 2>/dev/null || true
+  python3 -m venv --clear "$REPO_ROOT/venv"
+  # shellcheck source=/dev/null
+  source "$REPO_ROOT/venv/bin/activate"
+fi
+
+echo "Instalando dependencias (provider + manufacturer + retailer)…"
+python -m pip install -q -r "$REPO_ROOT/provider/requirements.txt" -r "$REPO_ROOT/manufacturer/requirements.txt" -r "$REPO_ROOT/retailer/requirements.txt"
 
 echo "Sembrando base de datos del provider…"
 pushd "$REPO_ROOT/provider" >/dev/null
@@ -56,39 +65,55 @@ pushd "$REPO_ROOT/manufacturer" >/dev/null
 python -m app.seed
 popd >/dev/null
 
+echo "Sembrando base de datos del retailer…"
+pushd "$REPO_ROOT/retailer" >/dev/null
+python -m app.seed
+popd >/dev/null
+
 echo "Arrancando provider en http://127.0.0.1:8001 …"
 pushd "$REPO_ROOT/provider" >/dev/null
 uvicorn app.api:app --host 127.0.0.1 --port 8001 &
 PIDS+=($!)
 popd >/dev/null
 
-echo "Arrancando manufacturer en http://127.0.0.1:8000 …"
+echo "Arrancando manufacturer en http://127.0.0.1:8002 …"
 pushd "$REPO_ROOT/manufacturer" >/dev/null
-uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+uvicorn app.main:app --host 127.0.0.1 --port 8002 &
+PIDS+=($!)
+popd >/dev/null
+
+echo "Arrancando retailer en http://127.0.0.1:8003 …"
+pushd "$REPO_ROOT/retailer" >/dev/null
+APP_CONFIG="$REPO_ROOT/retailer/config.json" uvicorn app.api:app --host 127.0.0.1 --port 8003 &
 PIDS+=($!)
 popd >/dev/null
 
 echo "Esperando a que las APIs respondan…"
 for _ in $(seq 1 30); do
-  if curl -sf "http://127.0.0.1:8001/health" >/dev/null && curl -sf "http://127.0.0.1:8000/health" >/dev/null; then
+  if curl -sf "http://127.0.0.1:8001/health" >/dev/null && curl -sf "http://127.0.0.1:8002/health" >/dev/null && curl -sf "http://127.0.0.1:8003/health" >/dev/null; then
     break
   fi
   sleep 0.3
 done
 
-if ! curl -sf "http://127.0.0.1:8000/health" >/dev/null; then
+if ! curl -sf "http://127.0.0.1:8002/health" >/dev/null; then
   echo "Advertencia: el manufacturer no respondió a /health a tiempo." >&2
+fi
+
+if ! curl -sf "http://127.0.0.1:8003/health" >/dev/null; then
+  echo "Advertencia: el retailer no respondió a /health a tiempo." >&2
 fi
 
 echo ""
 echo "────────────────────────────────────────────────────────────"
 echo "  Provider API:     http://localhost:8001/docs"
-echo "  Manufacturer API: http://localhost:8000/docs"
+echo "  Manufacturer API: http://localhost:8002/docs"
+echo "  Retailer API:     http://localhost:8003/docs"
 echo "  Dashboard (UI):   http://localhost:8501"
 echo "────────────────────────────────────────────────────────────"
 echo "  Cierra la UI con Ctrl+C para detener también las APIs."
 echo ""
 
 pushd "$REPO_ROOT/manufacturer" >/dev/null
-streamlit run app/ui.py --server.port 8501 --server.address 127.0.0.1
+PRINTER_SIM_API_URL="http://127.0.0.1:8002" streamlit run app/ui.py --server.port 8501 --server.address 127.0.0.1
 popd >/dev/null

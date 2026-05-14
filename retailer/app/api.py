@@ -82,6 +82,15 @@ def catalog(db: Session = Depends(get_db)):
     return services.get_catalog(db)
 
 
+@app.post("/api/catalog/sync")
+def sync_catalog(db: Session = Depends(get_db)):
+    try:
+        updated = services.sync_catalog_from_manufacturer(db, _manufacturer_url())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"status": "synced", "updated_models": updated}
+
+
 @app.post("/api/catalog/price")
 def set_price(model: str, req: PriceSetRequest, db: Session = Depends(get_db)):
     try:
@@ -150,9 +159,14 @@ def backorder_order(order_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/purchases", response_model=PurchaseOrderOut, status_code=201)
 def create_purchase(payload: PurchaseOrderCreate, db: Session = Depends(get_db)):
-    po = services.create_purchase_order(
-        db, payload.model, payload.quantity, _manufacturer_url(), _retailer_name()
-    )
+    try:
+        po = services.create_purchase_order(
+            db, payload.model, payload.quantity, _manufacturer_url(), _retailer_name()
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     return po
 
 

@@ -60,6 +60,35 @@ def set_price(db: Session, model: str, price: float, markup_pct: float = 30.0) -
     return item
 
 
+def sync_catalog_from_manufacturer(db: Session, manufacturer_url: str) -> int:
+    """Refresh wholesale prices from the manufacturer's REST catalog."""
+    resp = httpx.get(f"{manufacturer_url}/api/catalog", timeout=10.0)
+    resp.raise_for_status()
+
+    updated = 0
+    for remote in resp.json():
+        model = remote.get("name")
+        if not model:
+            continue
+        item = db.query(CatalogItem).filter_by(model=model).first()
+        if item is None:
+            continue
+        item.wholesale_price = remote.get("wholesale_price")
+        updated += 1
+
+    db.commit()
+    if updated:
+        _log_event(
+            db,
+            "manufacturer_catalog_synced",
+            "catalog",
+            0,
+            {"updated_models": updated, "manufacturer_url": manufacturer_url},
+        )
+        db.commit()
+    return updated
+
+
 # ---------------------------------------------------------------------------
 # Stock
 # ---------------------------------------------------------------------------
@@ -101,16 +130,12 @@ def create_customer_order(db: Session, customer: str, model: str, quantity: int)
     db.add(order)
     db.commit()
     db.refresh(order)
-
+    
+    # Log order received, but leave as "pending" for retailer to process
     available = _stock_for(db, model)
-    if available >= quantity:
-        _fulfill_order(db, order)
-    else:
-        order.status = "backordered"
-        db.commit()
-        _log_event(db, "order_backordered", "customer_order", order.id,
-                   {"model": model, "qty": quantity, "available": available})
-        db.commit()
+    _log_event(db, "customer_order_received", "customer_order", order.id,
+               {"model": model, "qty": quantity, "available": available})
+    db.commit()
 
     return order
 
@@ -176,6 +201,17 @@ def list_purchase_orders(db: Session) -> List[PurchaseOrder]:
 def create_purchase_order(
     db: Session, model: str, quantity: int, manufacturer_url: str, retailer_name: str
 ) -> PurchaseOrder:
+    if quantity <= 0:
+        raise ValueError("Quantity must be positive")
+
+    try:
+        sync_catalog_from_manufacturer(db, manufacturer_url)
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Manufacturer catalog is unavailable: {exc}") from exc
+
+    if not db.query(CatalogItem).filter_by(model=model).first():
+        raise ValueError(f"Model '{model}' not in retailer catalog")
+
     day = _current_day(db)
     po = PurchaseOrder(
         model=model,
@@ -205,9 +241,12 @@ def create_purchase_order(
                    {"model": model, "qty": quantity, "manufacturer_order_id": po.manufacturer_order_id})
         db.commit()
     except Exception as exc:
+        po.status = "failed"
+        db.commit()
         _log_event(db, "purchase_order_failed", "purchase_order", po.id,
                    {"model": model, "qty": quantity, "error": str(exc)})
         db.commit()
+        raise RuntimeError(f"Could not place manufacturer order: {exc}") from exc
 
     return po
 

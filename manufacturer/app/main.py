@@ -3,12 +3,17 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
 from app import models
-from app.schemas import PurchaseOrderCreateRequest
+from app.schemas import (
+    PrinterModelResponse,
+    PriceSetRequest,
+    PurchaseOrderCreateRequest,
+    SalesOrderCreateRequest,
+    SalesOrderResponse,
+)
 from app.services import ManufacturerService
 
 Base.metadata.create_all(bind=engine)
@@ -92,13 +97,14 @@ def finished_stock(service: ManufacturerService = Depends(get_service)):
 # Printer catalog & prices
 # ------------------------------------------------------------------
 
-@app.get("/api/price")
-def price_list(service: ManufacturerService = Depends(get_service)):
+@app.get("/api/catalog", response_model=list[PrinterModelResponse])
+def catalog(service: ManufacturerService = Depends(get_service)):
     return service.list_printer_models()
 
 
-class PriceSetRequest(BaseModel):
-    price: float
+@app.get("/api/price", response_model=list[PrinterModelResponse])
+def price_list(service: ManufacturerService = Depends(get_service)):
+    return service.list_printer_models()
 
 
 @app.post("/api/price/{model}")
@@ -122,13 +128,7 @@ def capacity(service: ManufacturerService = Depends(get_service)):
 # Sales orders (inbound from retailers)
 # ------------------------------------------------------------------
 
-class SalesOrderCreateRequest(BaseModel):
-    retailer: str
-    model: str
-    quantity: int
-
-
-@app.post("/api/orders", status_code=201)
+@app.post("/api/sales-orders", response_model=SalesOrderResponse, status_code=201)
 def create_sales_order(req: SalesOrderCreateRequest, service: ManufacturerService = Depends(get_service)):
     try:
         return service.create_sales_order(req.retailer, req.model, req.quantity)
@@ -136,12 +136,12 @@ def create_sales_order(req: SalesOrderCreateRequest, service: ManufacturerServic
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@app.get("/api/orders")
+@app.get("/api/sales-orders", response_model=list[SalesOrderResponse])
 def list_sales_orders(status: Optional[str] = None, service: ManufacturerService = Depends(get_service)):
     return service.list_sales_orders(status)
 
 
-@app.get("/api/orders/{order_id}")
+@app.get("/api/sales-orders/{order_id}", response_model=SalesOrderResponse)
 def get_sales_order(order_id: int, service: ManufacturerService = Depends(get_service)):
     order = service.get_sales_order(order_id)
     if order is None:
@@ -149,8 +149,38 @@ def get_sales_order(order_id: int, service: ManufacturerService = Depends(get_se
     return order
 
 
-@app.post("/api/orders/{order_id}/release")
+@app.post("/api/sales-orders/{order_id}/release", response_model=SalesOrderResponse)
 def release_order(order_id: int, service: ManufacturerService = Depends(get_service)):
+    try:
+        return service.release_order(order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+# Legacy routes for backwards compatibility (retailer still uses /api/orders)
+@app.post("/api/orders", response_model=SalesOrderResponse, status_code=201)
+def create_sales_order_compat(req: SalesOrderCreateRequest, service: ManufacturerService = Depends(get_service)):
+    try:
+        return service.create_sales_order(req.retailer, req.model, req.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/orders", response_model=list[SalesOrderResponse])
+def list_sales_orders_compat(status: Optional[str] = None, service: ManufacturerService = Depends(get_service)):
+    return service.list_sales_orders(status)
+
+
+@app.get("/api/orders/{order_id}", response_model=SalesOrderResponse)
+def get_sales_order_compat(order_id: int, service: ManufacturerService = Depends(get_service)):
+    order = service.get_sales_order(order_id)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Sales order not found")
+    return order
+
+
+@app.post("/api/orders/{order_id}/release", response_model=SalesOrderResponse)
+def release_order_compat(order_id: int, service: ManufacturerService = Depends(get_service)):
     try:
         return service.release_order(order_id)
     except ValueError as exc:
@@ -160,6 +190,14 @@ def release_order(order_id: int, service: ManufacturerService = Depends(get_serv
 @app.get("/api/production/status")
 def production_status(service: ManufacturerService = Depends(get_service)):
     return service.get_production_status()
+
+
+@app.post("/api/production/release/{order_id}", response_model=SalesOrderResponse)
+def production_release_order(order_id: int, service: ManufacturerService = Depends(get_service)):
+    try:
+        return service.release_order(order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 # ------------------------------------------------------------------
@@ -181,7 +219,7 @@ def provider_catalog(supplier_name: str, service: ManufacturerService = Depends(
         raise HTTPException(status_code=502, detail=str(exc))
 
 
-@app.post("/api/purchases")
+@app.post("/api/purchase-orders")
 def create_purchase(request: PurchaseOrderCreateRequest, service: ManufacturerService = Depends(get_service)):
     try:
         return service.create_purchase_order(request.supplier_name, request.product_name, request.quantity)
@@ -191,8 +229,24 @@ def create_purchase(request: PurchaseOrderCreateRequest, service: ManufacturerSe
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.get("/api/purchase-orders")
+def purchase_orders(service: ManufacturerService = Depends(get_service)):
+    return service.list_purchase_orders()
+
+
+# Legacy routes for backwards compatibility
+@app.post("/api/purchases")
+def create_purchase_compat(request: PurchaseOrderCreateRequest, service: ManufacturerService = Depends(get_service)):
+    try:
+        return service.create_purchase_order(request.supplier_name, request.product_name, request.quantity)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @app.get("/api/purchases")
-def purchases(service: ManufacturerService = Depends(get_service)):
+def purchases_compat(service: ManufacturerService = Depends(get_service)):
     return service.list_purchase_orders()
 
 

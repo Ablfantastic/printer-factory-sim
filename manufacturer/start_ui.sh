@@ -22,9 +22,11 @@ echo "Installing dependencies..."
 pip install -q -r requirements.txt
 
 # Ensure backend is running
-echo "Checking if API is available at http://localhost:8000..."
+API_URL="${PRINTER_SIM_API_URL:-http://localhost:8002}"
+
+echo "Checking if API is available at ${API_URL}..."
 if command -v curl &> /dev/null; then
-    if ! curl -s http://localhost:8000/health > /dev/null 2>&1; then
+    if ! curl -s "${API_URL}/health" > /dev/null 2>&1; then
         echo "⚠️  Warning: Backend API not responding!"
         echo "   Please start the API first: ./start_api.sh (from repo root) or manufacturer/start_api.sh"
         echo ""
@@ -34,4 +36,4 @@ fi
 echo ""
 echo "Starting Streamlit dashboard on http://localhost:8501"
 echo ""
-streamlit run app/ui.py --server.port 8501 --server.address 0.0.0.0
+PRINTER_SIM_API_URL="$API_URL" streamlit run app/ui.py --server.port 8501 --server.address 0.0.0.0
