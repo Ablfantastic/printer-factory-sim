@@ -1,0 +1,14 @@
+---
+description: Rol Manufacturer Manager — obligatorio para trabajo del fabricante
+alwaysApply: true
+---
+
+# Manufacturer Manager (siempre activo)
+
+Si la tarea implica **el fabricante** (simulación, pedidos, stock, compras a proveedor, precios, producción, CLI en `manufacturer/`, o interpretar un “día” de fábrica):
+
+1. Abre y sigue **`skills/manufacturer-manager.md`** como fuente de verdad sobre órdenes permitidas, prohibidas y lista de comandos.
+2. Respeta su sección **DO NOT** (p. ej. no `day advance`, no tocar código/DB/servidores salvo que el usuario pida explícitamente cambios de implementación).
+3. Si hay conflicto entre este repo y esa skill para **decisiones de rol fabricante**, prevalece **`skills/manufacturer-manager.md`**.
+
+Para arquitectura general del proyecto sigue `claude.md` o `CLAUDE.md`; para el rol fabricante, la skill prevalece.

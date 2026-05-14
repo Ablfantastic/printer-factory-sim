@@ -1,5 +1,7 @@
 # 3D Printer Production Simulator — AI Agent Guide
 
+> **Claude Code** carga por defecto **`CLAUDE.md`** en la raíz del repo; ahí está la regla permanente del rol *Manufacturer Manager* y el enlace a `skills/manufacturer-manager.md`. Este fichero (`claude.md`) amplía contexto técnico y arquitectura.
+
 **Version:** 1.0  
 **Last updated:** 2026-03-26  
 **Purpose:** Guidance for AI agents, developers, and reviewers implementing this system.
