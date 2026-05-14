@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
+from app import models
 from app.schemas import DayResponse, OrderCreateRequest
 from app.services import ProviderService
 
@@ -54,6 +55,22 @@ def advance_day(service: ProviderService = Depends(get_service)):
 @app.get("/api/day/current", response_model=DayResponse)
 def current_day(service: ProviderService = Depends(get_service)):
     return {"current_day": service.current_day()}
+
+
+@app.get("/api/events")
+def events(service: ProviderService = Depends(get_service)):
+    return [
+        {
+            "id": event.id,
+            "sim_day": event.sim_day,
+            "event_type": event.event_type,
+            "entity_type": event.entity_type,
+            "entity_id": event.entity_id,
+            "detail": event.detail,
+            "created_at": event.created_at,
+        }
+        for event in service.db.query(models.Event).order_by(models.Event.id).all()
+    ]
 
 
 @app.get("/health")

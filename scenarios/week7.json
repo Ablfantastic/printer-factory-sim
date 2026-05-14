@@ -1,0 +1,46 @@
+{
+  "name": "Week 7 baseline",
+  "seed": 7,
+  "apps": {
+    "provider": {
+      "name": "ChipSupply Co",
+      "url": "http://127.0.0.1:8001"
+    },
+    "manufacturer": {
+      "name": "Factory",
+      "url": "http://127.0.0.1:8002"
+    },
+    "retailer": {
+      "name": "PrinterWorld",
+      "url": "http://127.0.0.1:8003"
+    }
+  },
+  "demand": {
+    "base_price": 450,
+    "base_demand": {
+      "mean": 4,
+      "variance": 1.5
+    }
+  },
+  "retailer_policy": {
+    "target_stock": 6,
+    "reorder_lot": 4
+  },
+  "manufacturer_policy": {
+    "part_buffer": 2
+  },
+  "days": {
+    "1": {
+      "label": "Normal weekday demand",
+      "demand_modifier": 1.0
+    },
+    "2": {
+      "label": "Back-to-school bump",
+      "demand_modifier": 1.25
+    },
+    "3": {
+      "label": "Quiet market",
+      "demand_modifier": 0.75
+    }
+  }
+}
