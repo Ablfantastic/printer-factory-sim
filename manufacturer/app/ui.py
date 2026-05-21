@@ -189,19 +189,51 @@ def main():
         st.metric("Día simulado", f"{current}")
     with h3:
         if st.button("Avanzar un día", type="primary", use_container_width=True):
-            with st.spinner("Avanzando día (provider + manufacturer + retailer)…"):
-                repo_root = Path(__file__).resolve().parents[2]
-                scenario = repo_root / "scenarios" / "week7.json"
-                engine = repo_root / "scripts" / "turn_engine.py"
-                result = subprocess.run(
+            repo_root = Path(__file__).resolve().parents[2]
+            scenario = repo_root / "scenarios" / "week7.json"
+            engine = repo_root / "scripts" / "turn_engine.py"
+            agent_runner = repo_root / "scripts" / "agent_runner.py"
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+            with st.status(f"Avanzando día {current} → {current + 1}…", expanded=True) as status:
+                st.write("Avanzando turno (demanda + día)…")
+                turn_result = subprocess.run(
                     [sys.executable, str(engine), "--scenario", str(scenario), "--days", "1"],
                     capture_output=True,
                     text=True,
                 )
-            if result.returncode == 0:
-                st.toast(f"Día avanzado → {current + 1}")
-            else:
-                st.error(f"Error al avanzar el día:\n{result.stderr}")
+                if turn_result.returncode != 0:
+                    status.update(label="Error al avanzar día", state="error")
+                    st.error(turn_result.stderr)
+                else:
+                    if api_key:
+                        agents = [
+                            ("Provider", "provider-manager", repo_root / "provider"),
+                            ("Manufacturer", "manufacturer-manager", repo_root / "manufacturer"),
+                            ("Retailer", "retail-manager", repo_root / "retailer"),
+                        ]
+                        for label, skill, workdir in agents:
+                            st.write(f"Agente {label}…")
+                            agent_result = subprocess.run(
+                                [
+                                    sys.executable,
+                                    str(agent_runner),
+                                    "--skill", skill,
+                                    "--workdir", str(workdir),
+                                ],
+                                capture_output=True,
+                                text=True,
+                            )
+                            with st.expander(
+                                f"{'✅' if agent_result.returncode == 0 else '⚠️'} {label}"
+                            ):
+                                st.text(agent_result.stdout or agent_result.stderr)
+                    else:
+                        st.info(
+                            "ANTHROPIC_API_KEY no configurada — "
+                            "turno mecánico completado sin agentes IA."
+                        )
+                    status.update(label=f"Día {current + 1} completado", state="complete")
             st.rerun()
 
     st.divider()

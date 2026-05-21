@@ -1,0 +1,59 @@
+{
+  "name": "calm-market",
+  "seed": 42,
+  "apps": {
+    "provider": {
+      "name": "ChipSupply Co",
+      "url": "http://127.0.0.1:8001"
+    },
+    "manufacturer": {
+      "name": "Factory",
+      "url": "http://127.0.0.1:8002"
+    },
+    "retailer": {
+      "name": "PrinterWorld",
+      "url": "http://127.0.0.1:8003"
+    }
+  },
+  "demand": {
+    "base_price": 450,
+    "base_demand": {
+      "mean": 3,
+      "variance": 0.8
+    }
+  },
+  "retailer_policy": {
+    "target_stock": 6,
+    "reorder_lot": 4
+  },
+  "manufacturer_policy": {
+    "part_buffer": 5
+  },
+  "days": {
+    "1":  { "label": "Steady open",        "demand_modifier": 0.90 },
+    "2":  { "label": "Normal",             "demand_modifier": 1.00 },
+    "3":  { "label": "Slightly soft",      "demand_modifier": 0.85 },
+    "4":  { "label": "Normal",             "demand_modifier": 1.00 },
+    "5":  { "label": "Mild uptick",        "demand_modifier": 1.05 },
+    "6":  { "label": "Weekend dip",        "demand_modifier": 0.80 },
+    "7":  { "label": "Weekend dip",        "demand_modifier": 0.80 },
+    "8":  { "label": "Normal",             "demand_modifier": 1.00 },
+    "9":  { "label": "Soft",               "demand_modifier": 0.90 },
+    "10": { "label": "Normal",             "demand_modifier": 1.00 },
+    "11": { "label": "Mild uptick",        "demand_modifier": 1.05 },
+    "12": { "label": "Normal",             "demand_modifier": 1.00 },
+    "13": { "label": "Weekend dip",        "demand_modifier": 0.80 },
+    "14": { "label": "Weekend dip",        "demand_modifier": 0.75 },
+    "15": { "label": "Normal",             "demand_modifier": 1.00 },
+    "16": { "label": "Soft",               "demand_modifier": 0.90 },
+    "17": { "label": "Normal",             "demand_modifier": 0.95 },
+    "18": { "label": "Mild uptick",        "demand_modifier": 1.05 },
+    "19": { "label": "Normal",             "demand_modifier": 1.00 },
+    "20": { "label": "Weekend dip",        "demand_modifier": 0.80 },
+    "21": { "label": "Weekend dip",        "demand_modifier": 0.80 },
+    "22": { "label": "Normal",             "demand_modifier": 1.00 },
+    "23": { "label": "Slightly soft",      "demand_modifier": 0.90 },
+    "24": { "label": "Normal",             "demand_modifier": 1.00 },
+    "25": { "label": "Close",              "demand_modifier": 0.95 }
+  }
+}
