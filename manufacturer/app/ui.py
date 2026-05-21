@@ -1,5 +1,8 @@
 """Streamlit dashboard: manufacturer ↔ provider."""
 import os
+import subprocess
+import sys
+from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
@@ -186,9 +189,19 @@ def main():
         st.metric("Día simulado", f"{current}")
     with h3:
         if st.button("Avanzar un día", type="primary", use_container_width=True):
-            with st.spinner("Sincronizando con el proveedor…"):
-                api_post("/day/advance")
-            st.toast(f"Día avanzado → {current + 1}")
+            with st.spinner("Avanzando día (provider + manufacturer + retailer)…"):
+                repo_root = Path(__file__).resolve().parents[2]
+                scenario = repo_root / "scenarios" / "week7.json"
+                engine = repo_root / "scripts" / "turn_engine.py"
+                result = subprocess.run(
+                    [sys.executable, str(engine), "--scenario", str(scenario), "--days", "1"],
+                    capture_output=True,
+                    text=True,
+                )
+            if result.returncode == 0:
+                st.toast(f"Día avanzado → {current + 1}")
+            else:
+                st.error(f"Error al avanzar el día:\n{result.stderr}")
             st.rerun()
 
     st.divider()

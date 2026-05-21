@@ -2,6 +2,8 @@
 database.db
 manufacturer/manufacturer.db
 manufacturer/simulator.db
+provider/provider.db
+retailer/retailer.db
 __pycache__/
 .venv/
 venv/
