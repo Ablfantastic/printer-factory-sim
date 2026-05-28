@@ -67,6 +67,17 @@ def price_set(product: str, tier: int, price: float):
         svc.db.close()
 
 
+@price_app.command("raise-all")
+def price_raise_all(percent: float = typer.Argument(..., help="Percentage to raise all tier-1 prices (e.g. 10 for +10%)")):
+    """Raise tier-1 price of ALL products by percent%."""
+    svc = service()
+    try:
+        results = svc.raise_all_prices(percent)
+        typer.echo(json.dumps(results, indent=2, ensure_ascii=False))
+    finally:
+        svc.db.close()
+
+
 @app.command()
 def restock(product: str, quantity: int):
     svc = service()

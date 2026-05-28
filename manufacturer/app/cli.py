@@ -203,6 +203,21 @@ def price_set(
         svc.db.close()
 
 
+@price_app.command("raise-all")
+def price_raise_all(
+    percent: float = typer.Argument(..., help="Percentage to raise all wholesale prices (e.g. 8 for +8%)"),
+):
+    """Raise wholesale price of ALL printer models by percent%."""
+    svc = service()
+    try:
+        _pretty(svc.raise_all_wholesale_prices(percent))
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+    finally:
+        svc.db.close()
+
+
 # ------------------------------------------------------------------
 # Day
 # ------------------------------------------------------------------

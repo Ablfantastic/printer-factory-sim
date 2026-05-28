@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,47 @@ class ProviderService:
         state = self.db.get(models.SimState, "current_day")
         state.value = str(day)
         self.db.commit()
+
+    def get_state_value(self, key: str, default: str) -> str:
+        state = self.db.get(models.SimState, key)
+        return state.value if state is not None else default
+
+    def set_state_value(self, key: str, value: str) -> None:
+        state = self.db.get(models.SimState, key)
+        if state is None:
+            self.db.add(models.SimState(key=key, value=value))
+        else:
+            state.value = value
+        self.db.commit()
+
+    def market_signal(self) -> dict[str, Any]:
+        return {
+            "supply_modifier": float(self.get_state_value("supply_modifier", "1.0")),
+            "lead_time_modifier": float(self.get_state_value("lead_time_modifier", "1.0")),
+            "label": self.get_state_value("market_label", ""),
+        }
+
+    def set_market_signal(
+        self,
+        *,
+        supply_modifier: float = 1.0,
+        lead_time_modifier: float = 1.0,
+        label: str | None = None,
+    ) -> dict[str, Any]:
+        supply_modifier = max(0.1, float(supply_modifier))
+        lead_time_modifier = max(0.1, float(lead_time_modifier))
+        self.set_state_value("supply_modifier", f"{supply_modifier:.4f}")
+        self.set_state_value("lead_time_modifier", f"{lead_time_modifier:.4f}")
+        self.set_state_value("market_label", label or "")
+        self.log_event(
+            "market_signal_set",
+            detail={
+                "supply_modifier": supply_modifier,
+                "lead_time_modifier": lead_time_modifier,
+                "label": label or "",
+            },
+        )
+        return self.market_signal()
 
     def log_event(
         self,
@@ -119,7 +161,10 @@ class ProviderService:
 
         unit_price = self._select_price(product, quantity)
         day = self.current_day()
-        expected_delivery_day = day + max(1, product.lead_time_days)
+        signal = self.market_signal()
+        lead_time_modifier = float(signal["lead_time_modifier"])
+        effective_lead_time = max(1, math.ceil(product.lead_time_days * lead_time_modifier))
+        expected_delivery_day = day + effective_lead_time
 
         product.stock.quantity -= quantity
 
@@ -146,6 +191,9 @@ class ProviderService:
                 "product": product.name,
                 "quantity": quantity,
                 "expected_delivery_day": expected_delivery_day,
+                "base_lead_time_days": product.lead_time_days,
+                "lead_time_modifier": lead_time_modifier,
+                "effective_lead_time_days": effective_lead_time,
             },
         )
         self.log_event(
@@ -200,16 +248,54 @@ class ProviderService:
         if product.stock is None:
             product.stock = models.Stock(product_id=product.id, quantity=0)
 
-        product.stock.quantity += quantity
+        signal = self.market_signal()
+        supply_modifier = float(signal["supply_modifier"])
+        received_quantity = quantity
+        if supply_modifier < 1.0:
+            received_quantity = max(1, math.floor(quantity * supply_modifier))
+
+        product.stock.quantity += received_quantity
         self.db.commit()
 
         self.log_event(
             "stock_updated",
             entity_type="product",
             entity_id=product.id,
-            detail={"product": product.name, "new_quantity": product.stock.quantity},
+            detail={
+                "product": product.name,
+                "requested_quantity": quantity,
+                "received_quantity": received_quantity,
+                "supply_modifier": supply_modifier,
+                "new_quantity": product.stock.quantity,
+            },
         )
-        return {"product": product.name, "quantity": product.stock.quantity}
+        return {
+            "product": product.name,
+            "requested_quantity": quantity,
+            "received_quantity": received_quantity,
+            "quantity": product.stock.quantity,
+        }
+
+    def raise_all_prices(self, percent: float) -> list[dict[str, Any]]:
+        """Raise the tier-1 (min_quantity=1) price of every product by `percent`%."""
+        products = (
+            self.db.query(models.Product)
+            .options(joinedload(models.Product.pricing_tiers))
+            .all()
+        )
+        results = []
+        for product in products:
+            tier = next((t for t in product.pricing_tiers if t.min_quantity == 1), None)
+            if tier is None:
+                continue
+            new_price = round(tier.unit_price * (1 + percent / 100), 2)
+            tier.unit_price = new_price
+            self.log_event("price_changed", entity_type="product", entity_id=product.id,
+                           detail={"product": product.name, "min_quantity": 1,
+                                   "unit_price": new_price, "change_pct": percent})
+            results.append({"product": product.name, "min_quantity": 1, "unit_price": new_price})
+        self.db.commit()
+        return results
 
     def set_price(self, product_name: str, min_quantity: int, price: float) -> dict[str, Any]:
         product = (
@@ -273,6 +359,7 @@ class ProviderService:
     def export_state(self) -> dict[str, Any]:
         return {
             "current_day": self.current_day(),
+            "market_signal": self.market_signal(),
             "catalog": self.get_catalog(),
             "orders": self.list_orders(),
             "events": [
@@ -319,6 +406,10 @@ class ProviderService:
             self.db.commit()
 
         self.db.add(models.SimState(key="current_day", value=str(data.get("current_day", 1))))
+        market_signal = data.get("market_signal", {})
+        self.db.add(models.SimState(key="supply_modifier", value=str(market_signal.get("supply_modifier", 1.0))))
+        self.db.add(models.SimState(key="lead_time_modifier", value=str(market_signal.get("lead_time_modifier", 1.0))))
+        self.db.add(models.SimState(key="market_label", value=str(market_signal.get("label", ""))))
         self.db.commit()
 
 

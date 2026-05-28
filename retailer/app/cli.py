@@ -186,6 +186,28 @@ def backorder(
 
 
 # ---------------------------------------------------------------------------
+# Bulk order processing
+# ---------------------------------------------------------------------------
+
+@app.command("process-orders")
+def process_orders(
+    config: str = typer.Option("config.json", "--config", "-c"),
+):
+    """Fulfill or backorder ALL pending customer orders in one pass."""
+    _load_config(config)
+    from app import services
+    db = _get_db()
+    try:
+        result = services.process_pending_orders(db)
+        fulfilled = result["fulfilled"]
+        backordered = result["backordered"]
+        typer.echo(f"Fulfilled {len(fulfilled)} orders: {[o['id'] for o in fulfilled]}")
+        typer.echo(f"Backordered {len(backordered)} orders: {[o['id'] for o in backordered]}")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Purchase orders
 # ---------------------------------------------------------------------------
 
@@ -250,6 +272,26 @@ def price_set(
     try:
         item = services.set_price(db, model, price, _markup_pct())
         typer.echo(f"Price for '{item.model}' set to {item.retail_price}")
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1)
+    finally:
+        db.close()
+
+
+@price_app.command("raise-all")
+def price_raise_all(
+    percent: float = typer.Argument(..., help="Percentage to raise all retail prices (e.g. 8 for +8%)"),
+    config: str = typer.Option("config.json", "--config", "-c"),
+):
+    """Raise retail price of ALL models by percent%."""
+    _load_config(config)
+    from app import services
+    db = _get_db()
+    try:
+        results = services.raise_all_prices(db, percent, _markup_pct())
+        for r in results:
+            typer.echo(f"Price for '{r['model']}' set to {r['retail_price']}")
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)

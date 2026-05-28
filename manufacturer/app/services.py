@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -136,6 +137,19 @@ class ManufacturerService:
         self.log_event("price_set", entity_type="printer_model", entity_id=pm.id,
                        detail={"model": model, "price": price})
         return self._serialize_printer_model(pm)
+
+    def raise_all_wholesale_prices(self, percent: float) -> list[dict[str, Any]]:
+        """Raise wholesale price of every printer model by `percent`%."""
+        pms = self.db.query(models.PrinterModel).all()
+        results = []
+        for pm in pms:
+            new_price = round(pm.wholesale_price * (1 + percent / 100), 2)
+            pm.wholesale_price = new_price
+            self.log_event("price_set", entity_type="printer_model", entity_id=pm.id,
+                           detail={"model": pm.name, "price": new_price, "change_pct": percent})
+            results.append({"model": pm.name, "wholesale_price": new_price})
+        self.db.commit()
+        return results
 
     # ------------------------------------------------------------------
     # Capacity
@@ -441,26 +455,39 @@ class ManufacturerService:
                                detail={"model": order.model, "qty": order.quantity,
                                        "retailer": order.retailer})
 
-        # Step 5: poll provider purchase orders
+        # Step 5: poll provider purchase orders — fetch all statuses in parallel
         purchases = self.db.query(models.PurchaseOrder).filter(
             models.PurchaseOrder.status != "delivered"
         ).all()
-        for purchase in purchases:
+
+        def _fetch(po):
             try:
-                client = ProviderClient(purchase.supplier_url)
-                remote = client.get_order(purchase.provider_order_id)
-                purchase.status = remote["status"]
-                if remote["status"] == "delivered" and purchase.delivered_day is None:
-                    purchase.delivered_day = day
-                    self.db.commit()
-                    self._adjust_inventory(purchase.product_name, purchase.quantity)
-                    self.log_event("purchase_order_delivered", entity_type="purchase_order",
-                                   entity_id=purchase.id,
-                                   detail={"product": purchase.product_name, "qty": purchase.quantity})
-                else:
-                    self.db.commit()
+                client = ProviderClient(po.supplier_url)
+                return po.id, client.get_order(po.provider_order_id)
             except Exception:
-                pass
+                return po.id, None
+
+        # Fire all HTTP calls concurrently (one thread per open PO, max 20)
+        remote_by_id: dict[int, dict] = {}
+        if purchases:
+            with ThreadPoolExecutor(max_workers=min(len(purchases), 20)) as ex:
+                for po_id, remote in ex.map(_fetch, purchases):
+                    if remote is not None:
+                        remote_by_id[po_id] = remote
+
+        # Apply results sequentially (SQLite needs single-writer)
+        for purchase in purchases:
+            remote = remote_by_id.get(purchase.id)
+            if remote is None:
+                continue
+            purchase.status = remote["status"]
+            if remote["status"] == "delivered" and purchase.delivered_day is None:
+                purchase.delivered_day = day
+                self._adjust_inventory(purchase.product_name, purchase.quantity)
+                self.log_event("purchase_order_delivered", entity_type="purchase_order",
+                               entity_id=purchase.id,
+                               detail={"product": purchase.product_name, "qty": purchase.quantity})
+        self.db.commit()  # one single commit for all PO updates
 
         self.log_event("day_advanced", detail={"completed_day": day})
         self.set_current_day(day + 1)

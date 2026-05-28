@@ -11,6 +11,4 @@ if [ ! -d "$REPO_ROOT/venv" ]; then
 fi
 
 # shellcheck source=/dev/null
-source "$REPO_ROOT/venv/bin/activate"
-pip install -q -r requirements.txt
-python -m app.cli "$@"
+exec "$REPO_ROOT/venv/bin/python" -m app.cli "$@"

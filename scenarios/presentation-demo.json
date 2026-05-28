@@ -1,0 +1,55 @@
+{
+  "name": "presentation-demo",
+  "seed": 202,
+  "apps": {
+    "provider": {
+      "name": "ChipSupply Co",
+      "url": "http://127.0.0.1:8001"
+    },
+    "manufacturer": {
+      "name": "Factory",
+      "url": "http://127.0.0.1:8002"
+    },
+    "retailer": {
+      "name": "PrinterWorld",
+      "url": "http://127.0.0.1:8003"
+    }
+  },
+  "demand": {
+    "base_price": 450,
+    "base_demand": {
+      "mean": 2.2,
+      "variance": 0.6
+    }
+  },
+  "events": [
+    {
+      "name": "Demo open",
+      "start_day": 1,
+      "end_day": 1,
+      "demand_modifier": 1.0,
+      "supply_modifier": 1.0,
+      "lead_time_modifier": 1.0,
+      "description": "Normal demand. Retailer should fulfill from starting stock and place replenishment orders."
+    },
+    {
+      "name": "Flash promo",
+      "start_day": 2,
+      "end_day": 2,
+      "demand_modifier": 2.0,
+      "supply_modifier": 1.0,
+      "lead_time_modifier": 1.0,
+      "price_sensitivity": "high",
+      "description": "Short demand spike. Retailer orders more printers; manufacturer releases orders and buys parts."
+    },
+    {
+      "name": "Supplier warning",
+      "start_day": 3,
+      "end_day": 3,
+      "demand_modifier": 1.3,
+      "supply_modifier": 0.6,
+      "lead_time_modifier": 1.5,
+      "description": "Small supply disruption. Provider should restock earlier and raise prices; manufacturer should protect raw-material coverage."
+    }
+  ]
+}

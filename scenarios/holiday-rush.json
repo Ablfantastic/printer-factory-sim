@@ -22,38 +22,43 @@
       "variance": 1.5
     }
   },
-  "retailer_policy": {
-    "target_stock": 8,
-    "reorder_lot": 6
-  },
-  "manufacturer_policy": {
-    "part_buffer": 10
-  },
-  "days": {
-    "1":  { "label": "Pre-holiday normal",     "demand_modifier": 1.00 },
-    "2":  { "label": "Slight build-up",        "demand_modifier": 1.10 },
-    "3":  { "label": "Normal",                 "demand_modifier": 1.00 },
-    "4":  { "label": "Weekend dip",            "demand_modifier": 0.85 },
-    "5":  { "label": "Weekend dip",            "demand_modifier": 0.80 },
-    "6":  { "label": "Anticipation",           "demand_modifier": 1.20 },
-    "7":  { "label": "Anticipation",           "demand_modifier": 1.30 },
-    "8":  { "label": "Black Friday eve",       "demand_modifier": 1.60 },
-    "9":  { "label": "BLACK FRIDAY",           "demand_modifier": 2.50 },
-    "10": { "label": "Black Friday +1",        "demand_modifier": 2.20 },
-    "11": { "label": "Cyber Monday",           "demand_modifier": 2.00 },
-    "12": { "label": "Cyber Monday +1",        "demand_modifier": 1.70 },
-    "13": { "label": "Post-peak weekend",      "demand_modifier": 1.40 },
-    "14": { "label": "Post-peak weekend",      "demand_modifier": 1.20 },
-    "15": { "label": "Holiday tail",           "demand_modifier": 1.10 },
-    "16": { "label": "Holiday tail",           "demand_modifier": 1.00 },
-    "17": { "label": "Return season",          "demand_modifier": 0.90 },
-    "18": { "label": "Return season",          "demand_modifier": 0.85 },
-    "19": { "label": "Normal",                 "demand_modifier": 1.00 },
-    "20": { "label": "Weekend dip",            "demand_modifier": 0.80 },
-    "21": { "label": "Weekend dip",            "demand_modifier": 0.80 },
-    "22": { "label": "Recovery",               "demand_modifier": 0.95 },
-    "23": { "label": "Recovery",               "demand_modifier": 1.00 },
-    "24": { "label": "Normal close",           "demand_modifier": 0.90 },
-    "25": { "label": "End of run",             "demand_modifier": 0.85 }
-  }
+  "events": [
+    {
+      "name": "Pre-holiday normal",
+      "start_day": 1,
+      "end_day": 7,
+      "demand_modifier": 1.0,
+      "supply_modifier": 1.0,
+      "lead_time_modifier": 1.0,
+      "description": "Business as usual — agents should build buffer stock anticipating upcoming demand"
+    },
+    {
+      "name": "Black Friday",
+      "start_day": 8,
+      "end_day": 12,
+      "demand_modifier": 3.0,
+      "supply_modifier": 1.0,
+      "lead_time_modifier": 1.0,
+      "price_sensitivity": "high",
+      "description": "Demand triples — customers are price-sensitive. Did agents prepare?"
+    },
+    {
+      "name": "Chip shortage",
+      "start_day": 13,
+      "end_day": 20,
+      "demand_modifier": 1.5,
+      "supply_modifier": 0.4,
+      "lead_time_modifier": 2.0,
+      "description": "Supply disruption: provider has less stock, lead times double. Demand still elevated."
+    },
+    {
+      "name": "Christmas rush",
+      "start_day": 18,
+      "end_day": 25,
+      "demand_modifier": 2.5,
+      "supply_modifier": 0.6,
+      "lead_time_modifier": 1.5,
+      "description": "Christmas demand spike during constrained supply — overlaps with chip shortage days 18-20"
+    }
+  ]
 }

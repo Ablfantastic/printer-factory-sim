@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
 from app import models
-from app.schemas import DayResponse, OrderCreateRequest
+from app.schemas import DayResponse, MarketSignalRequest, OrderCreateRequest
 from app.services import ProviderService
 
 
@@ -55,6 +55,20 @@ def advance_day(service: ProviderService = Depends(get_service)):
 @app.get("/api/day/current", response_model=DayResponse)
 def current_day(service: ProviderService = Depends(get_service)):
     return {"current_day": service.current_day()}
+
+
+@app.get("/api/market-signal")
+def market_signal(service: ProviderService = Depends(get_service)):
+    return service.market_signal()
+
+
+@app.post("/api/market-signal")
+def set_market_signal(request: MarketSignalRequest, service: ProviderService = Depends(get_service)):
+    return service.set_market_signal(
+        supply_modifier=request.supply_modifier,
+        lead_time_modifier=request.lead_time_modifier,
+        label=request.label,
+    )
 
 
 @app.get("/api/events")

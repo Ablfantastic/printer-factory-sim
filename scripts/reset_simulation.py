@@ -41,6 +41,16 @@ def set_day_one(conn: sqlite3.Connection) -> None:
         "insert into sim_state(key, value) values('current_day', '1') "
         "on conflict(key) do update set value='1'"
     )
+    for key, value in (
+        ("supply_modifier", "1.0"),
+        ("lead_time_modifier", "1.0"),
+        ("market_label", ""),
+    ):
+        conn.execute(
+            "insert into sim_state(key, value) values(?, ?) "
+            "on conflict(key) do update set value=excluded.value",
+            (key, value),
+        )
 
 
 def backup_databases(destination: Path) -> list[Path]:

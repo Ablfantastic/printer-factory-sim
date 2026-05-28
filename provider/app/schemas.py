@@ -48,5 +48,11 @@ class DayResponse(BaseModel):
     current_day: int
 
 
+class MarketSignalRequest(BaseModel):
+    supply_modifier: float = 1.0
+    lead_time_modifier: float = 1.0
+    label: Optional[str] = None
+
+
 class MessageResponse(BaseModel):
     message: str

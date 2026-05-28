@@ -42,6 +42,22 @@ def get_catalog(db: Session) -> List[CatalogItem]:
     return db.query(CatalogItem).all()
 
 
+def raise_all_prices(db: Session, percent: float, markup_pct: float = 30.0) -> list[dict]:
+    """Raise retail price of every catalog item by `percent`%, respecting minimum markup."""
+    items = db.query(CatalogItem).all()
+    results = []
+    for item in items:
+        new_price = round(item.retail_price * (1 + percent / 100), 2)
+        min_price = (item.wholesale_price or 0) * (1 + markup_pct / 100)
+        new_price = max(new_price, round(min_price, 2))
+        item.retail_price = new_price
+        _log_event(db, "price_set", "catalog", item.id,
+                   {"model": item.model, "price": new_price, "change_pct": percent})
+        results.append({"model": item.model, "retail_price": new_price})
+    db.commit()
+    return results
+
+
 def set_price(db: Session, model: str, price: float, markup_pct: float = 30.0) -> CatalogItem:
     item = db.query(CatalogItem).filter_by(model=model).first()
     if not item:
@@ -188,6 +204,29 @@ def backorder_order(db: Session, order_id: int) -> CustomerOrder:
                {"model": order.model, "qty": order.quantity})
     db.commit()
     return order
+
+
+def process_pending_orders(db: Session) -> dict:
+    """Fulfill or backorder all pending customer orders in one pass.
+
+    Returns a summary dict with counts of fulfilled and backordered orders.
+    """
+    pending = list_customer_orders(db, status="pending")
+    fulfilled = []
+    backordered = []
+    for order in pending:
+        available = _stock_for(db, order.model)
+        if available >= order.quantity:
+            _fulfill_order(db, order)
+            fulfilled.append({"id": order.id, "model": order.model, "qty": order.quantity})
+        else:
+            order.status = "backordered"
+            db.commit()
+            _log_event(db, "order_backordered", "customer_order", order.id,
+                       {"model": order.model, "qty": order.quantity})
+            db.commit()
+            backordered.append({"id": order.id, "model": order.model, "qty": order.quantity})
+    return {"fulfilled": fulfilled, "backordered": backordered}
 
 
 # ---------------------------------------------------------------------------
