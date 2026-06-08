@@ -1,520 +1,281 @@
-# 3D Printer Production Simulator — AI Agent Guide
+# 3D Printer Supply Chain Simulator - Agent Guide
 
-> **Claude Code** carga por defecto **`CLAUDE.md`** en la raíz del repo; ahí está la regla permanente del rol *Manufacturer Manager* y el enlace a `skills/manufacturer-manager.md`. Este fichero (`claude.md`) amplía contexto técnico y arquitectura.
+**Project:** DGSI labs 5-8, autonomous supply chain for 3D printers  
+**Current scope:** final Week 8 system with provider, manufacturer, retailer, turn engine, skills, scenarios, logs, charts, and presentation assets.
 
-**Version:** 1.0  
-**Last updated:** 2026-03-26  
-**Purpose:** Guidance for AI agents, developers, and reviewers implementing this system.
+This file is the default context file for Claude Code. Treat it as the living contract for the repo. The older Week 5 single-app shape (`src/`, `run_api.py`, `/api/v1`) is no longer the implementation. The current system is three independent applications coordinated by scripts.
 
----
+## System Summary
 
-## Quick Reference
+The project simulates a 3D printer supply chain day by day:
+
+```mermaid
+flowchart LR
+    C[Customers] --> R[Retailer app<br/>:8003]
+    R -->|printer purchase orders| M[Manufacturer app<br/>:8002]
+    M -->|parts purchase orders| P[Provider app<br/>:8001]
+    P -->|parts deliveries| M
+    M -->|finished printers| R
+    R -->|fulfilled orders| C
+
+    E[Turn engine / extended runner] --> R
+    E --> M
+    E --> P
+    S[Scenario signals] --> E
+```
+
+Each app owns its own SQLite state, exposes FastAPI endpoints with Swagger at `/docs`, provides a Typer CLI, logs events, and supports JSON import/export.
+
+## Main Commands
+
+Start the whole development stack:
 
 ```bash
-# Start the API server
-python run_api.py
-
-# Launch the Streamlit dashboard
-streamlit run app.py
-
-# Initialize/reset the database
-python initialize_db.py
-
-# Load a scenario
-python initialize_db.py --scenario config/scenarios/quick_start.json
+./dev-stack.sh
 ```
 
-### Port Usage
-| Service | Default Port | URL |
-| :--- | :--- | :--- |
-| FastAPI Server | `8000` | `http://localhost:8000` |
-| FastAPI Docs | `8000` | `http://localhost:8000/docs` |
-| Streamlit Dashboard | `8501` | `http://localhost:8501` |
-
-### Key Files
-| File | Purpose |
-| :--- | :--- |
-| `src/main.py` | FastAPI application factory |
-| `app.py` | Streamlit entry point |
-| `src/database.py` | SQLAlchemy engine and session management |
-| `src/models/*.py` | SQLModel entity definitions |
-| `src/schemas/*.py` | Pydantic DTOs for request/response |
-| `src/services/*.py` | Business logic services |
-| `src/simulation/*.py` | SimPy environment and processes |
-| `docs/PRD.md` | Full Product Requirements Document |
-| `config/default.json` | Default configuration |
-
----
-
-## 1. Architecture Overview
-
-### System Flow
-
-```
-┌──────────────┐     HTTP      ┌──────────────┐
-│   Streamlit  │ ◄────────────► │   FastAPI    │
-│   Dashboard  │   JSON/RPC     │   REST API   │
-└──────────────┘                └──────┬───────┘
-                                       │
-                               ┌───────▼───────┐
-                               │ SimPy Engine  │
-                               │ + Services    │
-                               └───────┬───────┘
-                                       │
-                               ┌───────▼───────┐
-                               │  SQLite DB    │
-                               └───────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Role | Dependencies |
-| :--- | :--- | :--- |
-| **Streamlit** | Thin UI client; no business logic | FastAPI via HTTP |
-| **FastAPI** | Request routing, validation, orchestration | Pydantic, all services |
-| **SimPy Environment** | Time progression, day cycle execution | None (pure simulation) |
-| **Services** | Domain logic (BOM, Inventory, Purchasing, Production) | Models, EventLogger |
-| **Models (SQLModel)** | Database entities | SQLAlchemy |
-| **Schemas (Pydantic)** | API serialization | None |
-
-### Daily Simulation Loop
-
-When "Advance Day" is called:
-
-1. **Generate Demand** → Create random manufacturing orders based on configured mean/variance
-2. **Process Deliveries** → Deliver POs whose `expected_delivery == current_date`; update inventory
-3. **Process Production** → For each in-progress MO: consume BOM, respect daily capacity
-4. **Log Events** → Record all state changes in `events` table
-5. **Advance Calendar** → `current_date += 1 day`
-
-**Order of operations matters:** See §7.1 of PRD.md for detailed pseudocode.
-
----
-
-## 2. Data Model
-
-### Core Tables (SQLite)
-
-#### products
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| name | TEXT | NOT NULL, UNIQUE |
-| type | TEXT | CHECK(type IN ('raw', 'finished')) |
-| assembly_time_hours | REAL | DEFAULT NULL |
-
-#### suppliers
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| name | TEXT | NOT NULL |
-| product_id | INTEGER | FK → products.id |
-| lead_time_days | INTEGER | NOT NULL |
-| base_unit_cost | REAL | NOT NULL |
-| pricing_unit | TEXT | DEFAULT 'unit' |
-| units_per_pricing_unit | INTEGER | DEFAULT 1 |
-
-#### inventory
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| product_id | INTEGER | PK, FK → products.id |
-| quantity | INTEGER | DEFAULT 0 |
-
-#### bom
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| finished_product_id | INTEGER | PK, FK → products.id |
-| material_id | INTEGER | PK, FK → products.id |
-| quantity | INTEGER | NOT NULL |
-
-#### purchase_orders
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| supplier_id | INTEGER | FK → suppliers.id |
-| product_id | INTEGER | FK → products.id |
-| quantity | INTEGER | NOT NULL |
-| issue_date | DATE | NOT NULL |
-| expected_delivery | DATE | NOT NULL |
-| actual_delivery | DATE | NULLABLE |
-| status | TEXT | pending \| shipped \| delivered \| cancelled |
-| total_cost | REAL | NULLABLE |
-
-#### manufacturing_orders
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| created_date | DATE | NOT NULL |
-| product_id | INTEGER | FK → products.id |
-| quantity | INTEGER | NOT NULL |
-| released_date | DATE | NULLABLE |
-| completed_date | DATE | NULLABLE |
-| status | TEXT | pending \| in_progress \| completed \| cancelled |
-| materials_consumed | JSON | NULLABLE |
-
-#### events
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| id | INTEGER | PRIMARY KEY AUTOINCREMENT |
-| event_type | TEXT | NOT NULL |
-| sim_date | DATE | NOT NULL |
-| timestamp | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |
-| entity_type | TEXT | NULLABLE |
-| entity_id | INTEGER | NULLABLE |
-| detail | TEXT | JSON payload |
-
-#### configuration
-| Column | Type | Constraints |
-| :--- | :--- | :--- |
-| key | TEXT | PRIMARY KEY |
-| value | TEXT | JSON-encoded |
-| description | TEXT | NULLABLE |
-
----
-
-## 3. Tech Stack
-
-| Layer | Technology | Version | Notes |
-| :--- | :--- | :--- | :--- |
-| Language | Python | 3.11+ | Type hints required |
-| Simulation | SimPy | 4.x | Discrete-event engine |
-| API | FastAPI | 0.109+ | Auto OpenAPI docs |
-| ORM | SQLModel | 0.0.x | SQLAlchemy + Pydantic |
-| Validation | Pydantic | 2.x | v2 syntax |
-| UI | Streamlit | 1.30+ | Dashboard framework |
-| Charts | matplotlib | 3.8+ | Integration with Streamlit |
-| Runtime | uvicorn | 0.27+ | ASGI server |
-
-### Key Design Decisions
-
-1. **SimPy over custom loop**: Provides natural time progression and makes modeling staggered deliveries easier.
-
-2. **Strict warehouse enforcement**: If a delivery would exceed capacity, it is rejected (not capped).
-
-3. **MO status flow**: pending → in_progress (on release) → completed (materials consumed during daily processing)
-
-4. **Capacity = count limit**: Not hours-based; configurable printers/day.
-
-5. **Tiered pricing**: Implemented at application layer using `pricing_unit` and `units_per_pricing_unit`.
-
-6. **BOM references treated as additional items**: `pcb_ref: CTRL-V2` adds a separate line item, not replacement.
-
----
-
-## 4. API Endpoints
-
-All endpoints under `/api/v1`. Base URL: `http://localhost:8000`
-
-### Simulation Control
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/simulation/status` | Current date, day count |
-| POST | `/api/v1/simulation/day/advance` | Run one day cycle |
-| POST | `/api/v1/simulation/reset` | Reset to initial state |
-| GET | `/api/v1/simulation/configuration` | All config values |
-| PUT | `/api/v1/simulation/configuration/{key}` | Update single setting |
-
-### Products
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/products` | List all products |
-| POST | `/api/v1/products` | Create product |
-| GET | `/api/v1/products/{id}` | Single product |
-| PUT | `/api/v1/products/{id}` | Update product |
-| DELETE | `/api/v1/products/{id}` | Delete (if no deps) |
-
-### Suppliers
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/suppliers` | List suppliers |
-| GET | `/api/v1/suppliers?product_id=X` | Filter by product |
-| POST | `/api/v1/suppliers` | Create supplier |
-| PUT | `/api/v1/suppliers/{id}` | Update supplier |
-
-### Inventory
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/inventory` | All stock levels |
-| GET | `/api/v1/inventory/{product_id}` | Single product |
-| GET | `/api/v1/inventory/shortages` | Items below demand |
-| POST | `/api/v1/inventory/adjust` | Manual adjustment |
-
-### Bill of Materials
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/bom` | All BOM entries |
-| GET | `/api/v1/bom/{finished_id}` | BOM for product |
-| POST | `/api/v1/bom` | Add BOM entry |
-| PUT | `/api/v1/bom/{finished}/{material}` | Update quantity |
-| DELETE | `/api/v1/bom/{finished}/{material}` | Remove entry |
-
-### Manufacturing Orders
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/manufacturing-orders` | All MOs |
-| GET | `/api/v1/manufacturing-orders?status=pending` | Filter |
-| POST | `/api/v1/manufacturing-orders/{id}/release` | Release to production |
-| GET | `/api/v1/manufacturing-orders/{id}/bom` | Expand BOM |
-| DELETE | `/api/v1/manufacturing-orders/{id}` | Cancel order |
-
-### Purchase Orders
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/purchase-orders` | All POs |
-| POST | `/api/v1/purchase-orders` | Create PO |
-| GET | `/api/v1/purchase-orders/{id}` | Single PO |
-| DELETE | `/api/v1/purchase-orders/{id}` | Cancel PO |
-| GET | `/api/v1/purchase-orders/calculate-cost` | Preview tiered pricing |
-
-### Events & Export
-
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| GET | `/api/v1/events` | Event history |
-| GET | `/api/v1/events/timeline` | Aggregated for charts |
-| POST | `/api/v1/export/state` | Full snapshot |
-| POST | `/api/v1/export/inventory` | Inventory only |
-| POST | `/api/v1/import/state` | Restore from JSON |
-
----
-
-## 5. Event Types
-
-Every significant action generates an event:
-
-| Event Type | Triggered When |
-| :--- | :--- |
-| `DEMAND_GENERATED` | New MO created by random demand |
-| `MO_RELEASED` | Planner releases MO to production |
-| `PRODUCTION_STARTED` | First unit of MO processed |
-| `PRODUCTION_COMPLETED` | MO fully manufactured |
-| `PO_ISSUED` | Purchase order created |
-| `PO_SHIPPED` | Supplier ships order |
-| `PO_DELIVERED` | Goods arrive at warehouse |
-| `INVENTORY_ADJUSTMENT` | Any stock change |
-| `CAPACITY_HIT_LIMIT` | Daily capacity exhausted |
-| `STOCKOUT_WARNING` | Material shortage detected |
-| `WAREHOUSE_FULL` | Delivery exceeds capacity |
-| `DAY_ADVANCED` | Simulation cycle complete |
-
----
-
-## 6. Configuration Schema
-
-Loadable via `config/default.json`:
-
-```json
-{
-  "global": {
-    "capacity_per_day": 10,
-    "warehouse_capacity": 500,
-    "demand_mean": 2.0,
-    "demand_variance": 1.5
-  },
-  "products": [
-    {"id": 1, "name": "P3D-Classic", "type": "finished"},
-    {"id": 10, "name": "kit_piezas", "type": "raw"}
-  ],
-  "bom": [
-    {
-      "finished_product_id": 1,
-      "entries": {
-        "kit_piezas": 1,
-        "CTRL-V2": 1
-      }
-    }
-  ],
-  "suppliers": [
-    {
-      "name": "Acme Components",
-      "product_name": "kit_piezas",
-      "unit_cost": 50.0,
-      "lead_time_days": 5,
-      "pricing_unit": "box",
-      "units_per_pricing_unit": 100
-    }
-  ],
-  "initial_inventory": {
-    "kit_piezas": 30
-  }
-}
-```
-
----
-
-## 7. Implementation Guidelines
-
-### Code Style
-
-- **Type hints required** for all function signatures
-- **Docstrings** for public functions (Google or NumPy style)
-- **No `print()` in production code** — use `logging` module
-- **Business logic in services**, not in API handlers
-- **One class/function per concern** — avoid god objects
-
-### Example: Creating a Purchase Order
-
-```python
-from fastapi import APIRouter, Depends, HTTPException
-from src.schemas.purchase_order import PurchaseOrderCreate, PurchaseOrderResponse
-from src.services.purchasing_service import create_purchase_order
-
-router = APIRouter(prefix="/purchase-orders", tags=["Purchase Orders"])
-
-@router.post("", response_model=PurcahseOrderResponse)
-async def create_po(po_data: PurchaseOrderCreate):
-    try:
-        po = await create_purchase_order(po_data)
-        return po
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-```
-
-### Example: Daily Simulation Step
-
-```python
-import simpy
-from datetime import timedelta
-from src.services import demand, purchasing, production, events
-
-def run_day(env: simpy.Environment, current_date: date):
-    # Step 1: Generate demand
-    new_orders = demand.generate_orders(current_date)
-    
-    # Step 2: Process deliveries
-    arriving_pos = purchasing.get_due_deliveries(current_date)
-    for po in arriving_pos:
-        inventory.receive_purchase(po)
-        events.log('PO_DELIVERED', current_date, po_id=po.id)
-    
-    # Step 3: Production
-    remaining = config.capacity_per_day
-    for mo in production.get_active_orders():
-        if remaining <= 0:
-            break
-        if inventory.has_materials(mo):
-            produced = min(mo.remaining, remaining)
-            inventory.consume_bom(mo.product_id, produced)
-            remaining -= produced
-    
-    # Step 4: Advance calendar
-    env.current_date += timedelta(days=1)
-```
-
-### Directory Structure Refresher
-
-```
-printer-factory-sim/
-├── src/
-│   ├── api/              # FastAPI routers
-│   ├── models/           # SQLModel entities
-│   ├── schemas/          # Pydantic DTOs
-│   ├── services/         # Business logic
-│   └── simulation/       # SimPy processes
-├── config/               # JSON configs
-├── data/                 # SQLite database
-├── docs/                 # Documentation
-├── app.py                # Streamlit entry
-└── run_api.py            # FastAPI standalone
-```
-
----
-
-## 8. Development Workflow
-
-### Phase Checklist
-
-- [ ] **Phase 1: Foundation** — DB schema, CRUD APIs, config loader
-- [ ] **Phase 2: Core Simulation** — SimPy setup, demand generation, event logging
-- [ ] **Phase 3: Production Logic** — Capacity, BOM consumption, warehouse enforcement
-- [ ] **Phase 4: UI Integration** — Streamlit dashboard, charts
-- [ ] **Phase 5: Polish** — Import/export, edge cases, documentation
-
-### Before Making Changes
-
-1. Review `docs/PRD.md` for requirements context
-2. Check existing tests (when added) don't break
-3. Verify API endpoint parity with UI updates
-4. Update this `claude.md` if behavior changes
-
-### Testing Commands (Future)
+Start services manually:
 
 ```bash
-# When tests are added
-pytest tests/
-pytest tests/test_simulation.py -v
+./provider/start_api.sh
+./manufacturer/start_api.sh
+./retailer/start_api.sh
+./start_ui.sh
 ```
 
----
+Seed/reset the simulation:
 
-## 9. Common Pitfalls
-
-| Issue | Why It Happens | How to Avoid |
-| :--- | :--- | :--- |
-| Incorrect BOM expansion | Not resolving `pcb_ref` strings to product IDs | Always query products table when expanding |
-| Warehouse over-capacity | Failing to check before receiving PO | Call `can_fit_in_warehouse()` before any receive |
-| Double-consuming materials | Consuming on release vs. during production | Only consume during daily production step |
-| Wrong event timestamps | Using real-time instead of simulated date | Always pass `sim_date` from env |
-| Tiered pricing errors | Not dividing remainder proportionally | Use formula in §7.3 of PRD.md |
-| Capacity not respected | Processing all MOs regardless of limit | Track `remaining_capacity` and break when exhausted |
-
----
-
-## 10. Troubleshooting
-
-### "Database locked" Error
-
-**Cause:** Multiple processes accessing SQLite simultaneously  
-**Fix:** Ensure only one process runs at a time, or enable WAL mode in connection settings
-
-### "Module not found: simpy"
-
-**Cause:** Virtual environment not activated or dependencies not installed  
-**Fix:** 
 ```bash
-pip install -r requirements.txt
+python3 scripts/reset_simulation.py
 ```
 
-### API Returns 500 on Day Advance
+Run the Week 7 deterministic turn engine:
 
-**Cause:** Missing configuration or invalid BOM reference  
-**Fix:** Check `configuration` table has all required keys; verify product names in BOM exist
+```bash
+python3 scripts/turn_engine.py --scenario scenarios/week7.json --days 3
+```
 
-### Demand Always Zero
+Run the Week 8 extended autonomous simulation:
 
-**Cause:** Normal distribution with low mean/high variance can produce negative values  
-**Fix:** Ensure `max(0, int(random_value))` in demand service
+```bash
+python3 scripts/run_simulation.py --scenario scenarios/holiday-rush.json --days 25
+python3 scripts/run_simulation.py --scenario scenarios/calm-market.json --days 15
+```
 
----
+Generate analysis charts from logged metrics:
 
-## 11. Glossary
+```bash
+python3 scripts/plot_analysis.py
+```
 
-| Term | Meaning |
-| :--- | :--- |
-| **MO** | Manufacturing Order — produce finished goods |
-| **PO** | Purchase Order — buy raw materials |
-| **BOM** | Bill of Materials — recipe for a product |
-| **Sim Day** | One iteration of the simulation loop |
-| **Lead Time** | Days from PO issuance to delivery |
+Run the smoke check:
 
----
+```bash
+./scripts/check_supply_chain.sh
+```
 
-## 12. References
+## Ports
 
-- [PRD.md](docs/PRD.md) — Full requirements document
-- [SPEC.md](docs/SPEC.md) — Original specification (if available)
-- [SQLite Docs](https://www.sqlite.org/docs.html)
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [SimPy Docs](https://simpy.readthedocs.io/)
-- [Streamlit Docs](https://docs.streamlit.io/)
+| Service | Port | Docs |
+|---|---:|---|
+| Provider | 8001 | `http://localhost:8001/docs` |
+| Manufacturer | 8002 | `http://localhost:8002/docs` |
+| Retailer | 8003 | `http://localhost:8003/docs` |
+| Manufacturer Streamlit UI | 8501 | `http://localhost:8501` |
 
----
+## Repository Layout
 
-*Keep this document synced with implementation changes.*
+| Path | Purpose |
+|---|---|
+| `provider/` | Parts supplier app: catalog, pricing tiers, stock, purchase orders, lead times, event log. |
+| `manufacturer/` | Factory app: printer catalog, raw inventory, finished stock, retail sales orders, production, provider purchases, Streamlit UI. |
+| `retailer/` | Retail store app: customer orders, backorders, retail stock, manufacturer purchases, retail prices. |
+| `scripts/turn_engine.py` | Deterministic Week 7 orchestrator. |
+| `scripts/run_simulation.py` | Extended Week 8 runner with skill-agent hooks, scenario signals, metrics, and narrative logs. |
+| `scripts/agent_runner.py` | Invokes Codex or Claude in print mode for role skills. |
+| `scripts/plot_analysis.py` | Builds inventory, price, fulfillment, event, and comparison charts. |
+| `skills/` | Role instructions: provider, manufacturer, and retail manager. |
+| `scenarios/` | `week7.json`, `calm-market.json`, `holiday-rush.json`, and `presentation-demo.json`. |
+| `reports/` | Analysis markdown, generated charts, presentation, and final lab reports. |
+| `docs/PRD.md` | Final PRD for the current multi-app system. |
+
+## App Responsibilities
+
+### Provider
+
+Code lives in `provider/app/`.
+
+Core behavior:
+
+- Catalog of raw parts with tiered prices and product lead times.
+- Own stock levels and event log.
+- Order lifecycle: `pending -> confirmed -> in_progress -> shipped -> delivered`.
+- Minimum effective lead time is one day.
+- Market signals can adjust restock yield and effective lead time.
+- JSON export/import at `/api/export` and `/api/import`.
+
+Important endpoints:
+
+- `GET /api/catalog`
+- `GET /api/stock`
+- `POST /api/orders`
+- `GET /api/orders`
+- `GET /api/orders/{id}`
+- `POST /api/day/advance`
+- `GET /api/day/current`
+- `POST /api/market-signal`
+- `GET /api/events`
+
+Important CLI examples:
+
+```bash
+./provider/start_cli.sh catalog
+./provider/start_cli.sh stock
+./provider/start_cli.sh orders list
+./provider/start_cli.sh restock kit_piezas 50
+./provider/start_cli.sh price set kit_piezas 10 150
+./provider/start_cli.sh day advance
+```
+
+### Manufacturer
+
+Code lives in `manufacturer/app/`.
+
+Core behavior:
+
+- Receives printer orders from retailers.
+- Releases orders to production.
+- Consumes BOM parts when released orders enter production.
+- Tracks production durations per printer model.
+- Ships completed printers to retailers and marks them delivered one day later.
+- Orders raw parts from configured providers and polls remote provider order status on day advance.
+- Provides a Streamlit dashboard in `manufacturer/app/ui.py`.
+
+Important endpoints:
+
+- `GET /api/catalog`
+- `GET /api/stock`
+- `GET /api/finished-stock`
+- `POST /api/orders`
+- `GET /api/orders`
+- `POST /api/orders/{order_id}/release`
+- `GET /api/production/status`
+- `GET /api/capacity`
+- `GET /api/providers`
+- `GET /api/providers/{supplier_name}/catalog`
+- `POST /api/purchases`
+- `GET /api/purchases`
+- `POST /api/day/advance`
+- `GET /api/events`
+
+Important CLI examples:
+
+```bash
+./manufacturer/start_cli.sh sales orders
+./manufacturer/start_cli.sh production release 4
+./manufacturer/start_cli.sh purchase create --supplier "ChipSupply Co" --product kit_piezas --qty 20
+./manufacturer/start_cli.sh price raise-all 10
+./manufacturer/start_cli.sh day advance
+```
+
+### Retailer
+
+Code lives in `retailer/app/`.
+
+Core behavior:
+
+- Receives deterministic customer demand from the runner.
+- Processes every pending customer order into `fulfilled` or `backordered`.
+- Buys finished printers from the manufacturer.
+- Polls manufacturer order status and receives printer stock when delivered.
+- Synchronizes wholesale prices from the manufacturer and enforces a markup floor.
+- JSON export/import at `/api/export` and `/api/import`.
+
+Important endpoints:
+
+- `GET /api/catalog`
+- `POST /api/catalog/sync`
+- `GET /api/stock`
+- `POST /api/orders`
+- `GET /api/orders`
+- `POST /api/orders/{order_id}/fulfill`
+- `POST /api/orders/{order_id}/backorder`
+- `POST /api/purchases`
+- `GET /api/purchases`
+- `POST /api/day/advance`
+- `GET /api/events`
+
+Important CLI examples:
+
+```bash
+./retailer/start_cli.sh process-orders
+./retailer/start_cli.sh purchase create P3D-Classic 6
+./retailer/start_cli.sh price raise-all 7
+./retailer/start_cli.sh day advance
+```
+
+## Turn Order
+
+The Week 7 deterministic engine and Week 8 runner both keep one shared simulated calendar across services.
+
+Week 8 extended run:
+
+1. Load the day signal from the scenario.
+2. Apply provider market signal (`supply_modifier`, `lead_time_modifier`).
+3. Inject deterministic customer demand into the retailer.
+4. Run role decisions for provider, manufacturer, and retailer.
+5. Advance all three apps.
+6. Capture metrics and narrative logs.
+
+The scenario merge rule for overlapping events is multiplicative: demand, supply, and lead-time modifiers multiply. This is documented and used by `scripts/run_simulation.py`.
+
+## Skills
+
+All role skills are in `skills/`:
+
+- `skills/provider-manager.md`
+- `skills/manufacturer-manager.md`
+- `skills/retail-manager.md`
+
+The skills deliberately forbid `day advance`; only the engine advances time. They also use "fast path" command hints from the runner so the agent does not waste turns rediscovering the state that was already provided.
+
+## Scenarios and Results
+
+Required scenarios exist:
+
+- `scenarios/calm-market.json`: stable control run.
+- `scenarios/holiday-rush.json`: volatile run with Black Friday, chip shortage, and Christmas rush.
+
+Observed run artifacts exist in `logs/` and generated charts exist in `reports/`:
+
+- `reports/calm-market_dashboard.png`
+- `reports/holiday-rush_dashboard.png`
+- `reports/holiday-rush_provider_detail.png`
+- `reports/holiday-rush_manufacturer_detail.png`
+- `reports/holiday-rush_retailer_detail.png`
+- `reports/comparison.png`
+
+The current logs show a 15-day calm run and a 25-day holiday run.
+
+## Coding Conventions
+
+- Keep FastAPI handlers thin; put business logic in `app/services.py`.
+- Keep CLI commands as thin wrappers over service methods.
+- Use Pydantic schemas for REST request/response models.
+- Preserve explicit order status transitions; do not hide lifecycle state behind booleans.
+- Every significant mutation must log an event.
+- Never commit `.env`, `*.db`, `venv/`, `.venv/`, `__pycache__/`, or `logs/`.
+- Prefer deterministic scenario runs when producing report evidence.
+- Do not invent new ports or app names unless configs are updated too.
+
+## Final Deliverable Checklist
+
+- Provider, manufacturer, and retailer source code present.
+- Three app seed files present.
+- Three role skill files present.
+- At least two scenario files present.
+- Turn engine and extended simulation runner present.
+- Event logs, metrics logs, analysis charts, and presentation artifacts present.
+- `docs/PRD.md`, `README.md`, `.gitignore`, and this `CLAUDE.md` reflect the final architecture.
+- Reports for labs 6, 7, and 8 exist in markdown.
+- Merged PDF generated from markdown using pandoc and mermaid-filter.
