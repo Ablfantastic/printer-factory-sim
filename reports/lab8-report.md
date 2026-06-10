@@ -108,29 +108,21 @@ The generated evidence is stored as metrics logs in `logs/` and charts in `repor
 
 ![Holiday rush dashboard](reports/holiday-rush_dashboard.png)
 
-### Inventory Over Time
+The dashboard summarizes the full 25-day holiday-rush run across all three roles. Inventory, prices, and order fulfillment all show the signature of a stressed supply chain.
 
-In the calm run, customer demand is stable but still enough to drain retail stock early. Retailer total stock starts at 10 units on day 1 and ends at 2 units on day 15, with a minimum of 0. Manufacturer raw stock falls from 190 to 90 units, showing that even the control scenario consumes buffers faster than the upstream system replaces them.
+**Inventory** starts under pressure and never fully recovers at the retail level. Retail stock begins at 8 units and repeatedly hits zero. Manufacturer raw stock dips to a minimum of 57 units during the stressed middle days, then recovers to 295 by day 25 as provider deliveries catch up. This late recovery is delayed, not anticipatory.
 
-In the holiday run, the retailer is under pressure almost immediately. Retail stock starts at 8 units and repeatedly hits zero. Manufacturer raw stock falls to a minimum of 57 units during the stressed middle of the run, then recovers to 295 by day 25 as provider deliveries and restocks catch up. This recovery is important: the later run does not show permanent supplier collapse, but it does show delayed upstream response.
+**Prices** rise persistently across all roles. Retail prices for the three printer models reach `1100.14`, `780.04`, and `1936.86` by day 25. Wholesale prices follow with values of `546.67`, `367.73`, and `957.79`. Provider tier prices increase on constrained parts — `kit_piezas` tier 10 rises from `135.0` to `171.52`, and `transformador_24v` tier 50 from `18.0` to `23.96`. The movement is a sustained escalation in response to backlog, not oscillation.
 
-![Holiday rush role details](reports/holiday-rush_manufacturer_detail.png)
+**Orders** tell a similar story. The run receives 212 customer orders over 25 days, fulfills 164, and ends with 48 backordered. The largest demand peak is day 20, with a catch-up burst of 38 fulfilled orders driven by stock that had accumulated from earlier upstream activity.
 
-### Prices Over Time
+For more detail on each role individually, the per-role breakdown charts are available in the `reports/` folder: `holiday-rush_manufacturer_detail.png`, `holiday-rush_provider_detail.png`, and `holiday-rush_retailer_detail.png`.
 
-The calm run shows retail price increases while wholesale and provider prices remain flat. Retail prices move from `479.99/279.99/729.99` to `820.94/527.96/845.05` for Classic, Mini, and Pro. This means the retailer is using price as a local pressure valve even when the manufacturer and provider do not adjust.
-
-The holiday run has much stronger price movement. By day 25, wholesale prices reach `546.67`, `367.73`, and `957.79`, while retail prices reach `1100.14`, `780.04`, and `1936.86`. Provider tier prices also move for selected constrained parts: `kit_piezas` tier 10 rises from `135.0` to `171.52`, and `transformador_24v` tier 50 rises from `18.0` to `23.96`. Prices do not oscillate wildly; they rise as a response to persistent backlog, low stock, and supply stress.
-
-![Holiday rush provider detail](reports/holiday-rush_provider_detail.png)
-
-### Order Fulfillment
-
-The calm run receives 80 customer orders over 15 days. It fulfills 59 and ends with 21 backordered orders. The biggest daily demand is 10 orders on day 4. This tells us the baseline is not "healthy"; it is stable but under-provisioned. The agents can serve many customers, but lead times and stock buffers are too small to avoid chronic backlog.
-
-The holiday run receives 212 customer orders over 25 days. It fulfills 164 and ends with 48 backordered orders. The largest demand day is day 20, with 18 placed orders, 38 fulfilled orders, and 18 new backorders. The high fulfilled count on day 20 is a catch-up burst: stock that arrived from earlier manufacturer activity was immediately consumed by accumulated demand.
+---
 
 ![Scenario comparison](reports/comparison.png)
+
+The comparison chart puts the calm-market and holiday-rush runs side by side. The calm run is a useful baseline: 80 customer orders over 15 days, 59 fulfilled, with stable prices and gradual stock depletion. Compared to the holiday run, the difference in scale and volatility is immediately visible. Retail prices in the holiday scenario end up roughly double those of the calm run, and the order volume is more than twice as large. The calm run shows that the system is already under-provisioned at baseline — the holiday events do not create a different kind of failure, they amplify the same structural weakness.
 
 ### Event Overlay and Causal Chain
 
@@ -142,7 +134,14 @@ The event phases explain the shape of the volatile run:
 - Days 18-20: chip shortage and Christmas overlap, multiplying the stress.
 - Days 21-25: Christmas demand remains high, but prices and recovered upstream stock dampen the later collapse.
 
-The most visible emergent behavior is a bullwhip pattern. Customer demand spikes at the retailer, retailer purchases amplify it into printer orders, manufacturer BOM expansion amplifies it again into part orders, and provider stock/price changes arrive with delay. The manufacturer raw-stock recovery by day 25 is not simply "good news"; it is also evidence that upstream orders placed during panic conditions can keep arriving after downstream demand has already changed.
+The most visible emergent behavior is a bullwhip pattern, unfolding in three compounding phases.
+During days 1–7, both the retailer and the manufacturer operate under normal demand assumptions. Neither agent accumulates a sufficiently large safety stock: the retailer keeps minimal printer inventory, and the manufacturer does not pre-build finished units in anticipation of a surge. When Black Friday hits on day 8, demand spikes abruptly and neither agent is prepared.
+
+This triggers a reactive scramble. The retailer, facing stockouts, places aggressively large orders on the manufacturer. The manufacturer, in turn, scales up production and issues oversized part orders to the provider, each printer requiring multiple components, so even a moderate increase in production targets translates into a disproportionately large upstream parts order, further inflated by safety-stock logic trying to compensate for the accumulated backlog. The upstream signal is already a distorted, magnified version of the original retail demand shock.
+
+Then, on day 13, the chip shortage hits. Precisely when the manufacturer is placing its largest part orders, supplier lead times extend and delivery rates drop. The incoming parts flow slows just as production pressure peaks, making it impossible for the manufacturer to clear the backlog through output. The two stressors (demand surge and supply disruption) overlap and multiply: the retailer's stockouts persist not just because demand is high, but because the upstream pipeline has seized up at the worst possible moment.
+
+By days 18–20, Christmas demand compounds the already unresolved Black Friday backlog. Only after day 21, as the chip shortage eases and previously-placed large orders finally arrive, does the manufacturer's raw-parts stock begin to recover. Critically, this upstream recovery is not a sign of restored equilibrium, it is evidence of order inertia: panic-driven purchases placed during peak stress keep arriving even as downstream demand begins to normalize, setting the stage for a potential overstock correction in subsequent periods.
 
 ### Required Questions
 
