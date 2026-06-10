@@ -21,7 +21,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MIN_AGENT_TURNS = 8
-MAX_TURNS_RETRY_BONUS = 4
+MAX_TURNS_RETRY_BONUS = 6
 DEFAULT_BACKEND = "codex"
 DEFAULT_CODEX_MODEL = "gpt-5.4-mini"
 DEFAULT_CLAUDE_MODEL = "claude-haiku-4-5-20251001"
@@ -57,7 +57,7 @@ def run_claude_command(cmd: list[str], workdir: Path) -> str:
         encoding="utf-8",
         errors="replace",
         cwd=str(workdir),
-        timeout=300,
+        timeout=600,
     )
     output = result.stdout.strip()
     if not output and result.stderr:
@@ -92,7 +92,7 @@ def run_codex_command(prompt: str, workdir: Path, model: str) -> str:
             encoding="utf-8",
             errors="replace",
             cwd=str(REPO_ROOT),
-            timeout=300,
+            timeout=600,
         )
         output = ""
         if output_path.exists():
@@ -169,7 +169,7 @@ def run_agent(
         try:
             return run_codex_command(prompt, workdir, codex_model)
         except subprocess.TimeoutExpired:
-            return "Agent turn timed out after 5 minutes."
+            return "Agent turn timed out after 10 minutes."
         except FileNotFoundError:
             return (
                 "ERROR: 'codex' CLI not found in PATH. "
@@ -207,7 +207,7 @@ def run_agent(
         return output
 
     except subprocess.TimeoutExpired:
-        return "Agent turn timed out after 5 minutes."
+        return "Agent turn timed out after 10 minutes."
     except FileNotFoundError:
         return (
             "ERROR: 'claude' CLI not found in PATH. "
@@ -232,7 +232,7 @@ def run_agent(
         return output or "Agent turn complete (no output)."
 
     except subprocess.TimeoutExpired:
-        return "Agent turn timed out after 5 minutes."
+        return "Agent turn timed out after 10 minutes."
     except FileNotFoundError:
         return (
             "ERROR: 'claude' CLI not found in PATH. "

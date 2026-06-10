@@ -1030,8 +1030,8 @@ def main() -> int:
                         help="Agent CLI backend for provider/manufacturer (default: codex).")
     parser.add_argument("--model", default="",
                         help="Model for provider/manufacturer agents (default: codex=gpt-5.4-mini, claude=CLI default).")
-    parser.add_argument("--max-turns", type=int, default=8,
-                        help="Max agentic turns per agent per day (default/minimum effective: 8).")
+    parser.add_argument("--max-turns", type=int, default=15,
+                        help="Max agentic turns per agent per day (default: 15).")
     parser.add_argument("--retailer-mode", choices=("direct", "claude"), default="direct",
                         help="Use deterministic REST policy for retailer by default; choose 'claude' to run the retail skill.")
     args = parser.parse_args()

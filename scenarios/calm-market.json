@@ -44,16 +44,6 @@
     "12": { "label": "Normal",             "demand_modifier": 1.00 },
     "13": { "label": "Weekend dip",        "demand_modifier": 0.80 },
     "14": { "label": "Weekend dip",        "demand_modifier": 0.75 },
-    "15": { "label": "Normal",             "demand_modifier": 1.00 },
-    "16": { "label": "Soft",               "demand_modifier": 0.90 },
-    "17": { "label": "Normal",             "demand_modifier": 0.95 },
-    "18": { "label": "Mild uptick",        "demand_modifier": 1.05 },
-    "19": { "label": "Normal",             "demand_modifier": 1.00 },
-    "20": { "label": "Weekend dip",        "demand_modifier": 0.80 },
-    "21": { "label": "Weekend dip",        "demand_modifier": 0.80 },
-    "22": { "label": "Normal",             "demand_modifier": 1.00 },
-    "23": { "label": "Slightly soft",      "demand_modifier": 0.90 },
-    "24": { "label": "Normal",             "demand_modifier": 1.00 },
-    "25": { "label": "Close",              "demand_modifier": 0.95 }
+    "15": { "label": "Stable close",       "demand_modifier": 0.95 }
   }
 }

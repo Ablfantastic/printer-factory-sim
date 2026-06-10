@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash --version)",
+      "Bash(python run_api.py)",
+      "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'C:\\\\Users\\\\Albert\\\\Desktop\\\\Màster\\\\2n semestre\\\\DGSI\\\\printer-factory-sim'; streamlit run app.py\")"
+    ]
+  }
+}
