@@ -10,23 +10,7 @@ date: "2026-06-08"
 
 Lab 7 completed the three-app supply chain and introduced orchestration. The new app was the retailer, which receives customer demand, fulfills from stock, backorders when necessary, and buys finished printers from the manufacturer. The new script was the turn engine, which advances all services in lock-step instead of relying on a human to type commands in three terminals.
 
-```mermaid
-sequenceDiagram
-    participant TE as Turn Engine
-    participant R as Retailer :8003
-    participant M as Manufacturer :8002
-    participant P as Provider :8001
-
-    TE->>R: POST /api/orders customer demand
-    TE->>R: deterministic retailer turn
-    R->>M: POST /api/orders printer purchase
-    TE->>M: deterministic manufacturer turn
-    M->>P: POST /api/orders parts purchase
-    TE->>P: provider turn
-    TE->>R: POST /api/day/advance
-    TE->>M: POST /api/day/advance
-    TE->>P: POST /api/day/advance
-```
+![Sequence Diagram](./mermaid-diagram7.png)
 
 The architecture now has a downstream demand source and a complete upstream reaction path:
 

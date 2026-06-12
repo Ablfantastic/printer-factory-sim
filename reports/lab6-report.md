@@ -10,19 +10,7 @@ date: "2026-06-08"
 
 Lab 6 moved the Week 5 factory simulator from a single-app production planner into the first distributed version of the supply chain. The goal was deliberately narrow: build a provider app, keep it as an independent process with its own database, and teach the manufacturer to buy raw parts through a REST contract instead of reaching into the provider's state.
 
-```mermaid
-flowchart LR
-    M[Manufacturer app<br/>FastAPI + CLI<br/>:8002]
-    P[Provider app<br/>FastAPI + CLI<br/>:8001]
-    MDB[(manufacturer.db)]
-    PDB[(provider.db)]
-
-    M -->|GET /api/catalog| P
-    M -->|POST /api/orders| P
-    M -->|GET /api/orders/id| P
-    M --> MDB
-    P --> PDB
-```
+![Flowchart](./mermaid-diagram6.png)
 
 The provider is responsible for catalog, pricing tiers, stock, order lifecycle, and event history. The manufacturer remains responsible for its own raw-parts inventory and keeps a local purchase order record for every remote provider order. This duplication is intentional: the provider owns the seller's view of the transaction, while the manufacturer owns the buyer's view and needs to know what is in flight.
 
