@@ -106,7 +106,7 @@ Two scenarios were used for analysis:
 
 The generated evidence is stored as metrics logs in `logs/` and charts in `reports/`.
 
-![Holiday rush dashboard](reports/holiday-rush_dashboard.png)
+![Holiday rush dashboard](./holiday-rush_dashboard.png)
 
 The dashboard summarizes the full 25-day holiday-rush run across all three roles. Inventory, prices, and order fulfillment all show the signature of a stressed supply chain.
 
@@ -120,7 +120,7 @@ For more detail on each role individually, the per-role breakdown charts are ava
 
 ---
 
-![Scenario comparison](reports/comparison.png)
+![Scenario comparison](./comparison.png)
 
 The comparison chart puts the calm-market and holiday-rush runs side by side. The calm run is a useful baseline: 80 customer orders over 15 days, 59 fulfilled, with stable prices and gradual stock depletion. Compared to the holiday run, the difference in scale and volatility is immediately visible. Retail prices in the holiday scenario end up roughly double those of the calm run, and the order volume is more than twice as large. The calm run shows that the system is already under-provisioned at baseline — the holiday events do not create a different kind of failure, they amplify the same structural weakness.
 
