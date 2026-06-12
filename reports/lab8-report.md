@@ -10,32 +10,7 @@ date: "2026-06-08"
 
 Lab 8 completed the three-week arc: all three roles have skill files, the scenarios include real market pressure, and the simulation produces logs and charts that can be analyzed after the run. The final system keeps execution deterministic where correctness matters and uses role skills where business decisions are needed.
 
-```mermaid
-flowchart LR
-    subgraph World[Shared simulated world]
-      C[Customer demand]
-      R[Retailer<br/>orders, stock, prices]
-      M[Manufacturer<br/>BOM, production, stock]
-      P[Provider<br/>parts, tiers, lead times]
-    end
-
-    E[Extended runner<br/>scripts/run_simulation.py]
-    S[Scenario JSON<br/>demand/supply/lead-time signals]
-    K[Skill files<br/>provider/manufacturer/retailer]
-    L[Per-day logs + metrics]
-    G[Matplotlib charts]
-
-    S --> E
-    K --> E
-    E --> C
-    C --> R
-    R -->|printer orders| M
-    M -->|parts orders| P
-    P -->|deliveries polled| M
-    M -->|deliveries polled| R
-    E --> L
-    L --> G
-```
+![Flowchart](./mermaid-diagram.png)
 
 The final runner is `scripts/run_simulation.py`. It reads a scenario, applies the day signal, injects customer orders, runs the three role turns, advances all apps, and writes metrics. The scenario merge rule for overlapping events is multiplicative. For example, during the overlap of chip shortage and Christmas rush, demand and lead-time modifiers compound instead of replacing one another. This makes days 18-20 of `holiday-rush` the strongest stress period.
 
